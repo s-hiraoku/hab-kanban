@@ -59,6 +59,7 @@ function database(): Db {
 	return drizzle(bindings.DB, { schema }) as unknown as Db;
 }
 
+// Opened per request: everything a run needs between requests, such as Cursor's last check, lives in the card's stored state.
 export function getBoard(): BoardHandle {
 	const config = env();
 	const cursor = config.cursorApiKey ? createCursorClient({ apiKey: config.cursorApiKey, baseUrl: config.cursorApiUrl ?? undefined }) : null;
