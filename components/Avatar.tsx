@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import type { MemberView } from "@/lib/view";
 
@@ -23,7 +24,7 @@ export function MemberAvatar({ member, size = 22, ring = false, className }: { m
 			style={style}
 			title={member.kind === "bot" ? `${member.name} (bot)` : member.name}
 		>
-			{isImage ? <img src={member.avatar ?? ""} alt="" width={size} height={size} className="size-full rounded-full object-cover" referrerPolicy="no-referrer" /> : glyph}
+			{isImage ? <Image src={member.avatar ?? ""} alt="" width={size} height={size} unoptimized className="size-full rounded-full object-cover" referrerPolicy="no-referrer" /> : glyph}
 			{member.kind === "bot" && size >= 20 && !ring ? (
 				<span aria-hidden="true" className="absolute -right-0.5 -bottom-0.5 size-[34%] min-h-[7px] min-w-[7px] rounded-full border-2 border-(--surface) bg-teal" />
 			) : null}

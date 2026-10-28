@@ -24,12 +24,10 @@ export function shortDate(iso: string, now = new Date()): string {
  * so the server's render shows the age and the browser fills in the rest once it has hydrated.
  */
 export function CreatedAt({ iso, age, phrase = false }: { iso: string; age: string; phrase?: boolean }) {
-	const inBrowser = useSyncExternalStore(
-		noSubscribe,
-		() => true,
-		() => false,
-	);
-	const dated = inBrowser && Date.now() - Date.parse(iso) >= DATED_AFTER_MS;
+	// null while the server renders and the browser hydrates.
+	const now = useSyncExternalStore(subscribeClock, readClock, () => null);
+	const inBrowser = now !== null;
+	const dated = now !== null && now - Date.parse(iso) >= DATED_AFTER_MS;
 	const label = dated ? shortDate(iso) : phrase && age !== "just now" ? `${age} ago` : age;
 	return (
 		<time dateTime={iso} title={inBrowser ? exactTime(iso) : undefined} className="whitespace-nowrap">
@@ -38,4 +36,27 @@ export function CreatedAt({ iso, age, phrase = false }: { iso: string; age: stri
 	);
 }
 
-const noSubscribe = () => () => {};
+// One clock for every timestamp on the page. It ticks each minute while anything shows a time.
+let clock = 0;
+const clockListeners = new Set<() => void>();
+let ticker: ReturnType<typeof setInterval> | undefined;
+
+function readClock(): number {
+	if (clock === 0) clock = Date.now();
+	return clock;
+}
+
+function subscribeClock(listener: () => void) {
+	clockListeners.add(listener);
+	ticker ??= setInterval(() => {
+		clock = Date.now();
+		for (const item of clockListeners) item();
+	}, 60_000);
+	return () => {
+		clockListeners.delete(listener);
+		if (clockListeners.size === 0) {
+			clearInterval(ticker);
+			ticker = undefined;
+		}
+	};
+}

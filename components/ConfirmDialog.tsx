@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
 	AlertDialog,
 	AlertDialogCancel,
@@ -29,9 +29,7 @@ export function ConfirmDialog({ request, onDone }: { request: ConfirmRequest | n
 	// Keep the last request on screen while the dialog animates out.
 	const [shown, setShown] = useState(request);
 	const [busy, setBusy] = useState(false);
-	useEffect(() => {
-		if (request) setShown(request);
-	}, [request]);
+	if (request && request !== shown) setShown(request);
 
 	return (
 		<AlertDialog open={request !== null} onOpenChange={(open) => !open && !busy && onDone()}>

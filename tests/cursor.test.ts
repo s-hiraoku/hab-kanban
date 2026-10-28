@@ -31,7 +31,7 @@ function fakeCursor() {
 			fake.created.push(request);
 			return fake.create;
 		},
-		getRun: async (_agent: AgentRef) => {
+		getRun: async () => {
 			fake.checks += 1;
 			return fake.run;
 		},

@@ -1,4 +1,4 @@
-import { openBoard, type BoardHandle, type OwnerCommand } from "@/lib/board";
+import { openBoard, type BoardHandle } from "@/lib/board";
 import type { CursorClient } from "@/lib/cursor";
 import type { Instant } from "@/lib/domain";
 import { createAccounts, type Accounts, type GitHubProfile } from "@/lib/accounts";

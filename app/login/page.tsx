@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SESSION_COOKIE } from "@/lib/auth";
 import type { SignInError } from "@/lib/github";
-import { isOwnerAccount } from "@/lib/http";
-import { env, getAccounts } from "@/lib/runtime";
+import { sessionIsOwner } from "@/lib/http";
+import { env } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,7 +19,7 @@ const MESSAGES: Record<SignInError, string> = {
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
 	const jar = await cookies();
-	if (isOwnerAccount(await getAccounts().userFor(jar.get(SESSION_COOKIE)?.value, Date.now()), env())) redirect("/");
+	if (await sessionIsOwner(jar.get(SESSION_COOKIE)?.value, env())) redirect("/");
 	const { error } = await searchParams;
 	const message = error && error in MESSAGES ? MESSAGES[error as SignInError] : null;
 	return (

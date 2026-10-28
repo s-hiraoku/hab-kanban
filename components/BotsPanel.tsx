@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon, CopyIcon, PlusIcon, UploadIcon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { MemberAvatar } from "@/components/Avatar";
 import type { Command } from "@/components/Board";
 import { ConfirmDialog, type ConfirmRequest } from "@/components/ConfirmDialog";
@@ -35,8 +35,12 @@ export default function BotsPanel({
 	const [tab, setTab] = useState<"roster" | "connect">(bots.length ? "roster" : "connect");
 	const [draft, setDraft] = useState<Draft | null>(null);
 	const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
-	const [origin, setOrigin] = useState("");
-	useEffect(() => setOrigin(window.location.origin), []);
+	// The board's own address, which only the browser knows; the server renders the panel closed anyway.
+	const origin = useSyncExternalStore(
+		noSubscribe,
+		() => window.location.origin,
+		() => "",
+	);
 
 	const mcpUrl = `${origin}/api/mcp`;
 	const grokMessage = `カスタムMCPサーバーを追加してください。名前は kanban、Remote HTTPS で URL は ${mcpUrl} です。
@@ -395,3 +399,5 @@ async function shrinkImage(file: File): Promise<string> {
 	const webp = canvas.toDataURL("image/webp", 0.86);
 	return webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/png");
 }
+
+const noSubscribe = () => () => {};
