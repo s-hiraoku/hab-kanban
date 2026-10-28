@@ -9,8 +9,8 @@
 		{
 			"binding": "DB",
 			"database_name": "hab-kanban",
-			// Replace with the id `wrangler d1 create hab-kanban` prints. Local dev does not need it.
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			// From `wrangler d1 create hab-kanban`. Local dev does not need it.
+			"database_id": "b01c427a-20b6-4787-b788-6f8af9c3ebed",
 			"migrations_dir": "migrations"
 		}
 	],
