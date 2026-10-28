@@ -1,0 +1,7 @@
+# Copy to .dev.vars for `npm run preview` and `next dev`. Leave this example empty of real values.
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+OWNER_GITHUB_LOGIN=
+BOT_TOKEN=
+STUDIO_URL=
+CURSOR_API_KEY=

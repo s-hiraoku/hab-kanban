@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { BotProfile, BotProfilePatch } from "./bots";
 import type { BotRun, Card, CardContent, CardId, CardState, Column, ContentPatch, CursorRun, HttpsUrl, Instant, MemberId, PastRun } from "./domain";
+import { isUniqueViolation } from "./db";
 import { bots, cards } from "./schema";
 
 type QueryDb = {
@@ -191,7 +192,7 @@ export function createStore(db: QueryDb): Store {
 				if (!created) throw new Error("insert returned no row");
 				return { card: readCard(created), created: true };
 			} catch (error) {
-				if (row.externalId && pgCode(error) === "23505") {
+				if (row.externalId && isUniqueViolation(error)) {
 					const existing = await findExternal(db, row.externalId);
 					if (existing) return { card: existing, created: false };
 				}
@@ -356,21 +357,4 @@ function readContent(row: Row): CardContent {
 		repo: parsed.repo ? { url: parsed.repo.url as HttpsUrl, startingRef: parsed.repo.startingRef } : null,
 		originalLink: (parsed.originalLink as HttpsUrl | null) ?? null,
 	};
-}
-
-export function pgCode(error: unknown): string | undefined {
-	const seen = new Set<unknown>();
-	let current: unknown = error;
-	while (current && typeof current === "object" && !seen.has(current)) {
-		seen.add(current);
-		if ("code" in current && typeof current.code === "string") return current.code;
-		if ("cause" in current) {
-			current = current.cause;
-			continue;
-		}
-		break;
-	}
-	const message = error instanceof Error ? error.message : String(error);
-	const match = message.match(/\b(23505|23514|428C9)\b/);
-	return match?.[1];
 }

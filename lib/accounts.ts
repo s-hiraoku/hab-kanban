@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, lt } from "drizzle-orm";
-import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { SESSION_DAYS, hashToken, randomToken } from "./auth";
+import type { Db } from "./db";
 import * as schema from "./schema";
 
 const { sessions, users } = schema;
 
-export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
+export type { Db } from "./db";
 
 /** Who GitHub says signed in. */
 export type GitHubProfile = { id: number; login: string; name: string | null; avatarUrl: string | null };

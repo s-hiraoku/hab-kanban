@@ -1,17 +1,14 @@
-import { neon } from "@neondatabase/serverless";
-import { drizzle as drizzleNeon } from "drizzle-orm/neon-http";
-import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
-import { PGlite } from "@electric-sql/pglite";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { drizzle } from "drizzle-orm/d1";
 import { openBoard, type BoardHandle } from "./board";
-import { createAccounts, type Accounts, type Db } from "./accounts";
+import { createAccounts, type Accounts } from "./accounts";
 import { createCursorClient } from "./cursor";
+import type { Db } from "./db";
 import { createGitHubOAuth, type GitHubOAuth } from "./github";
-import { migrationSql } from "./migrations";
 import { createStore } from "./store";
 import * as schema from "./schema";
 
 export type Env = {
-	databaseUrl: string;
 	/** The GitHub OAuth app people sign in with. */
 	githubClientId: string;
 	githubClientSecret: string;
@@ -31,7 +28,6 @@ export type Env = {
 const MIN_SECRET = 32;
 
 export function env(source: NodeJS.ProcessEnv = process.env): Env {
-	const databaseUrl = required(source, "DATABASE_URL");
 	const githubClientId = required(source, "GITHUB_CLIENT_ID");
 	const githubClientSecret = required(source, "GITHUB_CLIENT_SECRET");
 	const ownerGithubLogin = required(source, "OWNER_GITHUB_LOGIN").replace(/^@/, "");
@@ -48,7 +44,7 @@ export function env(source: NodeJS.ProcessEnv = process.env): Env {
 	const githubWebUrl = source.GITHUB_WEB_URL?.trim() || null;
 	const githubApiUrl = source.GITHUB_API_URL?.trim() || null;
 	if (problems.length) throw new Error(problems.join("; "));
-	return { databaseUrl, githubClientId, githubClientSecret, ownerGithubLogin, githubWebUrl, githubApiUrl, botToken, studioUrl: studio, cursorApiKey, cursorApiUrl };
+	return { githubClientId, githubClientSecret, ownerGithubLogin, githubWebUrl, githubApiUrl, botToken, studioUrl: studio, cursorApiKey, cursorApiUrl };
 }
 
 function required(source: NodeJS.ProcessEnv, name: string): string {
@@ -57,65 +53,20 @@ function required(source: NodeJS.ProcessEnv, name: string): string {
 	return value;
 }
 
-// Next bundles each route separately, so a module-level cache would give every route its own local PGlite.
-const cache = ((globalThis as { __grokbotKanban?: { board?: BoardHandle; accounts?: Accounts; db?: Promise<Db> } }).__grokbotKanban ??= {});
-
-/** The database, opened once. A local PGlite gets the schema on first use. */
-function database(): Promise<Db> {
-	if (cache.db) return cache.db;
-	const config = env();
-	if (config.databaseUrl === "pglite") {
-		cache.db = (async () => {
-			const client = new PGlite();
-			await client.exec(migrationSql());
-			return drizzlePglite(client, { schema }) as never as Db;
-		})();
-	} else {
-		cache.db = Promise.resolve(neonDb(config.databaseUrl));
-	}
-	return cache.db;
-}
-
-function neonDb(url: string): Db {
-	return drizzleNeon(neon(url), { schema }) as never as Db;
+/** The D1 database bound as DB in wrangler.jsonc. `next dev` gets a local one through OpenNext. */
+function database(): Db {
+	const { env: bindings } = getCloudflareContext();
+	return drizzle(bindings.DB, { schema }) as unknown as Db;
 }
 
 export function getBoard(): BoardHandle {
-	if (cache.board) return cache.board;
 	const config = env();
 	const cursor = config.cursorApiKey ? createCursorClient({ apiKey: config.cursorApiKey, baseUrl: config.cursorApiUrl ?? undefined }) : null;
-	if (config.databaseUrl !== "pglite") {
-		cache.board = openBoard({ store: createStore(neonDb(config.databaseUrl) as never), now: () => Date.now() as never, cursor });
-		return cache.board;
-	}
-	let ready: Promise<BoardHandle> | null = null;
-	const open = () => {
-		ready ??= database().then((db) => openBoard({ store: createStore(db as never), now: () => Date.now() as never, cursor }));
-		return ready;
-	};
-	// Every capability view forwards each call to the real board once PGlite is ready.
-	const defer = <T extends object>(pick: (board: BoardHandle) => T): T =>
-		new Proxy({} as T, {
-			get: (_target, key) =>
-				async (...args: unknown[]) => {
-					const target = pick(await open()) as Record<PropertyKey, (...rest: unknown[]) => unknown>;
-					return target[key]?.(...args);
-				},
-		});
-	cache.board = {
-		owner: (cap) => defer((board) => board.owner(cap)),
-		bot: (cap) => defer((board) => board.bot(cap)),
-	};
-	return cache.board;
+	return openBoard({ store: createStore(database() as never), now: () => Date.now() as never, cursor });
 }
 
 export function getAccounts(): Accounts {
-	cache.accounts ??= {
-		signIn: async (...args) => createAccounts(await database()).signIn(...args),
-		userFor: async (...args) => createAccounts(await database()).userFor(...args),
-		signOut: async (...args) => createAccounts(await database()).signOut(...args),
-	};
-	return cache.accounts;
+	return createAccounts(database());
 }
 
 export function getGitHub(config: Env = env()): GitHubOAuth {

@@ -1,13 +1,10 @@
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
 import { openBoard, type BoardHandle, type OwnerCommand } from "@/lib/board";
 import type { CursorClient } from "@/lib/cursor";
 import type { Instant } from "@/lib/domain";
-import { createAccounts, type Accounts, type Db, type GitHubProfile } from "@/lib/accounts";
-import * as schema from "@/lib/schema";
-import { migrationSql } from "@/lib/migrations";
+import { createAccounts, type Accounts, type GitHubProfile } from "@/lib/accounts";
 import { createStore } from "@/lib/store";
 import type { Env } from "@/lib/runtime";
+import { openTestDb, type SqlClient } from "./sqlite";
 
 export const OWNER_LOGIN = "s-hiraoku";
 export const OWNER_PROFILE: GitHubProfile = { id: 18750282, login: OWNER_LOGIN, name: "Hiraoku", avatarUrl: null };
@@ -17,25 +14,22 @@ export type TestApp = {
 	board: BoardHandle;
 	accounts: Accounts;
 	env: Env;
-	client: PGlite;
+	client: SqlClient;
 	setNow: (value: number) => void;
 	now: () => number;
 	cookie: string;
 };
 
 export async function boot(options: { cursor?: CursorClient } = {}): Promise<TestApp> {
-	const client = new PGlite();
-	await client.exec(migrationSql());
-	const db = drizzle(client, { schema });
+	const { db, client } = openTestDb();
 	let now = Date.parse("2026-10-11T00:00:00.000Z");
 	const board = openBoard({
 		store: createStore(db as never),
 		now: () => now as Instant,
 		cursor: options.cursor ?? null,
 	});
-	const accounts = createAccounts(db as never as Db);
+	const accounts = createAccounts(db);
 	const env: Env = {
-		databaseUrl: "postgres://test",
 		githubClientId: "client-id",
 		githubClientSecret: "s".repeat(40),
 		ownerGithubLogin: OWNER_LOGIN,

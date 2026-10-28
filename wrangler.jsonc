@@ -1,0 +1,18 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "hab-kanban",
+	"main": ".open-next/worker.js",
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "hab-kanban",
+			// Replace with the id `wrangler d1 create hab-kanban` prints. Local dev does not need it.
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	"observability": { "enabled": true }
+}

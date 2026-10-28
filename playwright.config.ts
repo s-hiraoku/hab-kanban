@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
-// Browser tests for the board. They build the app and serve it on an in-memory PGlite database, so they
+// Not yet moved to the Worker runtime: they still start `next start`, which has no D1 binding.
+// Browser tests for the board. They build the app and serve it on an in-memory database, so they
 // exercise what ships, without the dev server's reloads. Stop `next dev` first, as both use .next.
 const PORT = 3210;
 const FAKE_CURSOR = "http://localhost:3299";
@@ -31,7 +32,6 @@ export default defineConfig({
 			timeout: 300_000,
 			reuseExistingServer: false,
 			env: {
-				DATABASE_URL: "pglite",
 				GITHUB_CLIENT_ID: "e2e-client-id",
 				GITHUB_CLIENT_SECRET: "e2e-github-secret-0123456789abcdefghijklmn",
 				OWNER_GITHUB_LOGIN: "s-hiraoku",

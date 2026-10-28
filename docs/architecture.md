@@ -13,7 +13,7 @@ flowchart LR
         kanbanBot -- SendToAgent --> otherBots
     end
 
-    subgraph vercel["Vercel · Next.js 15 (Node.js runtime)"]
+    subgraph cf["Cloudflare Workers · Next.js 16 via OpenNext"]
         login["/api/auth/github (+ /callback)<br/>OAuth with PKCE and state<br/>only OWNER_GITHUB_LOGIN"]
         ownerGate{{"Owner gate<br/>session token, hash in sessions table<br/>same-origin on writes"}}
         ownerRoutes["/ (SSR)<br/>/api/owner/sync<br/>/api/owner/commands<br/>/api/avatar/[id]"]
@@ -23,7 +23,7 @@ flowchart LR
         cursorClient["lib/cursor.ts<br/>CURSOR_API_KEY"]
     end
 
-    neon[("Neon Postgres<br/>cards · bots · users · sessions")]
+    d1[("Cloudflare D1<br/>cards · bots · users · sessions")]
     github["GitHub OAuth"]
     cursorAgent["Cursor cloud agent"]
 
@@ -34,7 +34,7 @@ flowchart LR
     kanbanBot == "Bearer BOT_TOKEN" ==> botGate
     otherBots == "Bearer BOT_TOKEN" ==> botGate
     botGate --> botRoutes -- "bot(cap)" --> board
-    board -- SQL --> neon
+    board -- SQL --> d1
     board --> cursorClient -- "POST /v1/agents, poll every 20 s" --> cursorAgent
     login -- "code → profile" --> github
 
@@ -43,7 +43,7 @@ flowchart LR
     linkStyle 3,6,7 stroke:#c2410c,stroke-width:2px
 ```
 
-There are two ways in. The owner signs in with GitHub and gets a session kept in the database (`lib/accounts.ts`); the Bots share one secret, `BOT_TOKEN`, from the Vercel environment. Past the gates only two capabilities remain, `Owner` and `Bot` (`lib/auth.ts`); neither carries a user or Bot identity yet. There is no middleware: every route calls `requireOwner` or `requireBot` itself, and the SSR page looks up the session directly.
+There are two ways in. The owner signs in with GitHub and gets a session kept in the database (`lib/accounts.ts`); the Bots share one secret, `BOT_TOKEN`, from the Worker's secrets. Past the gates only two capabilities remain, `Owner` and `Bot` (`lib/auth.ts`); neither carries a user or Bot identity yet. There is no middleware: every route calls `requireOwner` or `requireBot` itself, and the SSR page looks up the session directly.
 
 ## Running a card
 
@@ -52,7 +52,7 @@ Grok Bot has no API that starts a Bot from outside, so the board only queues run
 ```mermaid
 sequenceDiagram
     participant O as Owner (browser)
-    participant B as Board (Vercel + Neon)
+    participant B as Board (Workers + D1)
     participant K as Kanban Bot
     participant T as Assigned Bot
     O->>B: 1. Run (POST /api/owner/commands)

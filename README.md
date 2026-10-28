@@ -1,78 +1,67 @@
-# grokbot-kanban
+# hab-kanban
 
-A kanban for one owner and a roster of [Grok Bot](https://docs.x.ai/grok-bot/get-started) bots. Bots file, claim, annotate, and move cards over MCP or HTTP. Only you delete cards.
+A kanban for the work of a whole roster of agents: Grok Bot, Dots, Hermes, Claude Code, Codex, and whoever else calls it. Agents file, claim, annotate, and move cards over MCP or HTTP. Only the owner deletes cards.
 
-The board is meant to be served at `grok-bot-kanban.hiraoku.dev`. This repo does not deploy itself.
+It continues [grokbot-kanban](https://github.com/s-hiraoku/grokbot-kanban) on a newer stack (Next.js 16, React 19.3, zod 4, TypeScript 6) and moves it from Vercel and Neon to Cloudflare Workers and D1, which leaves the free-tier compute limits behind. Background: [HAB #15](https://github.com/s-hiraoku/hiraoku-agent-base/issues/15).
+
+## How it relates to HAB
+
+hab-kanban owns its cards. It does not manage the tasks of the [HAB](https://github.com/s-hiraoku/hiraoku-agent-base) Agent Hub, which runs only fixed, limited tasks, and it never reads or writes the Hub's database. If a card is ever tied to a HAB Task or a Relay message, that link goes through those contracts.
 
 ## Architecture
 
-The owner signs in with GitHub and the browser keeps a session cookie, every Grok Bot calls `/api/mcp` with the shared `BOT_TOKEN`, and both go through `lib/board.ts` to Neon Postgres. The server calls Cursor's API itself when a card is handed to a Cursor agent.
+The owner signs in with GitHub and the browser keeps a session cookie, every agent calls `/api/mcp` with the shared `BOT_TOKEN`, and both go through `lib/board.ts` to D1. The server calls Cursor's API itself when a card is handed to a Cursor agent.
 
 ```mermaid
 flowchart LR
     browser["Owner's browser"] == "session cookie (GitHub sign-in)" ==> owner["/ · /api/owner/*"]
-    bots["Grok Bots"] == "Bearer BOT_TOKEN" ==> bot["/api/mcp · /api/bot/cards"]
+    bots["Agents"] == "Bearer BOT_TOKEN" ==> bot["/api/mcp · /api/bot/cards"]
     owner --> board["lib/board.ts"]
     bot --> board
-    board --> neon[("Neon Postgres")]
+    board --> d1[("Cloudflare D1")]
     board --> cursor["Cursor cloud agent"]
 ```
 
-[docs/architecture.md](docs/architecture.md) has the full diagram, the Run sequence between the coordinating Bot and the others, and a table of every authentication path with what limits it sets for more than one user.
+The app runs on Cloudflare Workers through [OpenNext](https://opennext.js.org/cloudflare). [docs/architecture.md](docs/architecture.md) has the full diagram, the Run sequence, and every authentication path.
 
 ## Set up
 
-1. Use Node.js 22.
+1. Use Node.js 24.
 2. Install dependencies with `npm install`.
-3. Copy `.env.example` to `.env.local`.
-4. Fill the variables in the next section. Leave `.env.example` empty.
-5. For a local board without Neon, set `DATABASE_URL=pglite`. The data stays in this process and disappears when it stops.
-6. For Neon, put the pooled connection string in `DATABASE_URL` and run `npm run db:migrate`. It applies every file in `drizzle/` in order, and each file is safe to run again. Run it again after pulling a change that adds a file.
-7. Start the app with `npm run dev` and open http://localhost:3000.
+3. Copy `.dev.vars.example` to `.dev.vars` and fill it (see the next section). `.dev.vars` is ignored by git.
+4. Create the local database with `npm run db:migrate:local`. It applies `migrations/*.sql` to a D1 kept under `.wrangler/`.
+5. Start the app with `npm run dev` and open http://localhost:3000. `next dev` gets the D1 binding from `wrangler.jsonc` through OpenNext.
 
-`npm test` uses an in-memory Postgres. It does not need Neon. `npm run test:e2e` builds the app, serves it on port 3210 with an in-memory database, and drives the board in a real browser with Playwright at desktop, laptop, and phone sizes, with stand-ins for GitHub sign-in and Cursor; run `npx playwright install chromium` once first, and stop `npm run dev` before, since both use `.next`.
+`npm run preview` builds the Worker and serves it with wrangler, closer to production than `next dev`.
 
-The interface is built with Tailwind CSS and [shadcn/ui](https://ui.shadcn.com) components, which live in `components/ui` as ordinary source files. Add more with `npx shadcn@latest add <name>`.
+`npm test` runs on an in-memory `node:sqlite` with the same migrations, so it needs neither D1 nor wrangler. The Playwright tests (`npm run test:e2e`) have not been moved to the Worker runtime yet.
 
 ## Environment variables
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | yes | Neon connection string. `pglite` is local only. |
 | `GITHUB_CLIENT_ID` | yes | Client ID of the GitHub OAuth app you sign in with. |
 | `GITHUB_CLIENT_SECRET` | yes | That app's client secret. |
 | `OWNER_GITHUB_LOGIN` | yes | Your GitHub username. Only this account can sign in. |
-| `BOT_TOKEN` | yes | Bearer token for `/api/bot/cards`, at least 32 characters. |
+| `BOT_TOKEN` | yes | Bearer token for `/api/mcp` and `/api/bot/cards`, at least 32 characters. |
 | `STUDIO_URL` | no | `https` target of the Studio link. |
 | `CURSOR_API_KEY` | no | Cursor API key, from Cursor Dashboard → Integrations. With it, Run can hand cards to a Cursor cloud agent. |
 
-Generate `BOT_TOKEN` with `openssl rand -base64 32`. It must differ from `GITHUB_CLIENT_SECRET` and `CURSOR_API_KEY`.
-
-`OWNER_PASSWORD` from earlier versions is no longer used and can be removed.
+The database is not a variable: it is the D1 binding `DB` in `wrangler.jsonc`. Generate `BOT_TOKEN` with `openssl rand -base64 32`. It must differ from `GITHUB_CLIENT_SECRET` and `CURSOR_API_KEY`.
 
 ## Sign-in
 
-You sign in with GitHub. Create an OAuth app under GitHub → Settings → Developer settings → OAuth Apps → New OAuth App. Set **Homepage URL** to the board's address and **Authorization callback URL** to `<board address>/api/auth/github/callback`, for example `https://grok-bot-kanban.hiraoku.dev/api/auth/github/callback`. For local work, make a second app with `http://localhost:3000/api/auth/github/callback`, because an app takes one callback URL. Copy the client ID and a new client secret into the variables above.
+You sign in with GitHub. Create an OAuth app under GitHub → Settings → Developer settings → OAuth Apps → New OAuth App. Set **Homepage URL** to the board's address and **Authorization callback URL** to `<board address>/api/auth/github/callback`. For local work, make a second app with `http://localhost:3000/api/auth/github/callback`, because an app takes one callback URL.
 
-The board asks GitHub for no scopes, only your public profile, and uses PKCE and a one-time state, so a sign-in link can't be replayed or started from another site. Only `OWNER_GITHUB_LOGIN` gets in. Another account is turned away and nothing about it is stored. A session lasts 30 days. The cookie holds a random token and the database keeps only its SHA-256 hash in `sessions`. **Sign out** deletes that row, so the cookie stops working even if it was copied. Changing `OWNER_GITHUB_LOGIN` shuts out sessions of the previous account at once.
+The board asks GitHub for no scopes, only your public profile, and uses PKCE and a one-time state. Only `OWNER_GITHUB_LOGIN` gets in. A session lasts 30 days. The cookie holds a random token and the database keeps only its SHA-256 hash in `sessions`. **Sign out** deletes that row.
 
-`CRON_SECRET` from earlier versions is no longer used and can be removed from the Vercel project.
+## Deploy on Cloudflare
 
-## Deploy on Vercel
-
-1. Import this repo as a Vercel project. Framework preset is Next.js.
-2. Add the Neon integration. It writes `DATABASE_URL`.
-3. Set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `OWNER_GITHUB_LOGIN`, `BOT_TOKEN`, and optionally `STUDIO_URL` for Production. Use a separate Neon branch for Preview.
-4. Run `npm run db:migrate` against that database, or add the same SQL files as Neon migrations. `drizzle/*.sql` is the schema, applied in name order. Do not point a Preview deployment at the production database.
-5. Deploy with `vercel deploy --prod`.
-
-## Custom domain
-
-1. In the Vercel project, open Domains and add `grok-bot-kanban.hiraoku.dev`.
-2. At the DNS host for `hiraoku.dev`, add the record Vercel shows. For a subdomain that is usually a `CNAME` from `grok-bot-kanban` to `cname.vercel-dns.com`.
-3. Wait until Vercel reports the domain as valid. HTTPS is issued by Vercel.
-
-When you move the board to another domain, the GitHub OAuth app's callback URL and every Grok Bot connector's `/api/mcp` URL have to move with it. Keep the old domain attached until the Bots work on the new one, because a connector may not follow a redirect on POST.
+1. Create the database with `npx wrangler d1 create hab-kanban` and put the `database_id` it prints into `wrangler.jsonc`.
+2. Apply the schema with `npm run db:migrate`. Run it again after pulling a change that adds a file to `migrations/`.
+3. Set the secrets with `npx wrangler secret put <NAME>` for each required variable above.
+4. Deploy with `npm run deploy`.
+5. To serve it on your own domain, add a custom domain to the Worker in the Cloudflare dashboard. The GitHub OAuth app's callback URL and every agent's `/api/mcp` URL move with it.
 
 ## Using the board
 
@@ -137,7 +126,7 @@ Send `Authorization: Bearer $BOT_TOKEN`. A missing or wrong token returns `401` 
 Add `X-Bot-Name` with the bot's name, URL-encoded if it is not ASCII, to record who filed or edited a card. `assignees` takes bot names, `owner`, and `me` for the caller.
 
 ```bash
-curl -X POST https://grok-bot-kanban.hiraoku.dev/api/bot/cards \
+curl -X POST https://<board address>/api/bot/cards \
   -H "Authorization: Bearer $BOT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"externalId":"x-1849","title":"音声が6秒で途切れる","body":"キャラクターの返答が途中で止まる","source":"x","originalLink":"https://x.com/i/status/1849","kind":{"type":"voice","seconds":6},"repo":{"url":"https://github.com/s-hiraoku/grokbot","startingRef":"main"}}'
@@ -146,7 +135,7 @@ curl -X POST https://grok-bot-kanban.hiraoku.dev/api/bot/cards \
 Create returns `201` with `{ "card": { "id", "column": "inbox", ... } }`. The same `externalId` returns `200` and the existing card.
 
 ```bash
-curl -X PATCH https://grok-bot-kanban.hiraoku.dev/api/bot/cards/$ID \
+curl -X PATCH https://<board address>/api/bot/cards/$ID \
   -H "Authorization: Bearer $BOT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"screening":{"by":"grok"},"notes":"スパムではない"}'
@@ -162,8 +151,8 @@ Owner writes also require a same-origin `Origin` header.
 
 Card text, including text from a bot, is stored and shown as data. The panel renders links and simple formatting itself and never inserts card text as HTML.
 
-Do not commit real tokens. `.env.example` has empty placeholders. The repository is public.
+Do not commit real tokens. `.dev.vars.example` has empty placeholders. The repository is public.
 
 `CURSOR_API_KEY` stays on the server; neither the browser nor the bot token can read it. A Bot can hand a card to Cursor only for a card it is running or one that has no run, and Cursor works only on repositories its key can reach. Card text goes to Cursor as the agent's task, so treat a hand-off like giving the card to a colleague with access to that repository.
 
-Cards keep their last Cursor run in the stored state, so a card still links to its agent and pull request. Cards that were queued or running when agents were removed show in Todo or In Progress and move like any other card. The `slot` column from that time stays in the schema and is always empty now.
+Cards keep their last Cursor run in the stored state, so a card still links to its agent and pull request. Cards that were queued or running when agents were removed show in Todo or In Progress and move like any other card.
