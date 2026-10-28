@@ -61,7 +61,7 @@ The board asks GitHub for no scopes, only your public profile, and uses PKCE and
 2. Apply the schema with `npm run db:migrate`. Run it again after pulling a change that adds a file to `migrations/`.
 3. Set the secrets with `npx wrangler secret put <NAME>` for each required variable above.
 4. Deploy with `npm run deploy`.
-5. To serve it on your own domain, add a custom domain to the Worker in the Cloudflare dashboard. The GitHub OAuth app's callback URL and every agent's `/api/mcp` URL move with it.
+5. The board is served at https://hab-kanban.hiraoku.dev, set as a custom domain in `routes` in `wrangler.jsonc`. `hiraoku.dev` must be a zone in the same Cloudflare account; the deploy then creates the DNS record and certificate. To use another domain, change that pattern. The GitHub OAuth app's callback URL and every agent's `/api/mcp` URL move with it. The `workers.dev` address stays on until every agent has moved.
 
 ## Using the board
 
