@@ -34,7 +34,7 @@ The app runs on Cloudflare Workers through [OpenNext](https://opennext.js.org/cl
 
 `npm run preview` builds the Worker and serves it with wrangler, closer to production than `next dev`.
 
-`npm test` runs on an in-memory `node:sqlite` with the same migrations, so it needs neither D1 nor wrangler. The Playwright tests (`npm run test:e2e`) have not been moved to the Worker runtime yet.
+`npm test` runs on an in-memory `node:sqlite` with the same migrations, so it needs neither D1 nor wrangler. The Playwright tests (`npm run test:e2e`) build the Worker with OpenNext and serve it with `wrangler dev` on a fresh local D1 under `.wrangler/e2e`, with stand-in GitHub and Cursor servers and the test values in `e2e/e2e.vars`. Each run starts from an empty board. Set `E2E_SKIP_BUILD=1` to reuse the last build. CI runs them too.
 
 ## Environment variables
 

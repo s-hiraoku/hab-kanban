@@ -1,8 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
-// Not yet moved to the Worker runtime: they still start `next start`, which has no D1 binding.
-// Browser tests for the board. They build the app and serve it on an in-memory database, so they
-// exercise what ships, without the dev server's reloads. Stop `next dev` first, as both use .next.
+// Browser tests for the board. They build the Worker with OpenNext and serve it with wrangler on a fresh local
+// D1 (e2e/serve.mjs), so they exercise what ships. The stand-in GitHub and Cursor addresses and the other
+// variables come from e2e/e2e.vars.
 const PORT = 3210;
 const FAKE_CURSOR = "http://localhost:3299";
 const FAKE_GITHUB = "http://localhost:3298";
@@ -27,20 +27,11 @@ export default defineConfig({
 			env: { PORT: "3298" },
 		},
 		{
-			command: `npx next build && npx next start -p ${PORT}`,
+			command: process.env.E2E_SKIP_BUILD ? "node e2e/serve.mjs" : "npx opennextjs-cloudflare build && node e2e/serve.mjs",
 			url: `http://localhost:${PORT}/login`,
 			timeout: 300_000,
 			reuseExistingServer: false,
-			env: {
-				GITHUB_CLIENT_ID: "e2e-client-id",
-				GITHUB_CLIENT_SECRET: "e2e-github-secret-0123456789abcdefghijklmn",
-				OWNER_GITHUB_LOGIN: "s-hiraoku",
-				GITHUB_WEB_URL: FAKE_GITHUB,
-				GITHUB_API_URL: FAKE_GITHUB,
-				BOT_TOKEN: "e2e-bot-token-0123456789abcdefghijklmnopq",
-				CURSOR_API_KEY: "e2e-cursor-key-0123456789abcdefghijklmnop",
-				CURSOR_API_URL: FAKE_CURSOR,
-			},
+			env: { PORT: String(PORT) },
 		},
 	],
 });
