@@ -1,6 +1,10 @@
 node_modules/
+.next/
 dist/
+out/
 .env*
 *.log
 .DS_Store
 .wrangler/
+next-env.d.ts
+*.tsbuildinfo

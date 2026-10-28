@@ -6,7 +6,7 @@ A thin, read-only kanban UI over the [HAB (Hiraoku Agent Base)](https://github.c
 
 - The Hub is the source of truth. This app has no task database of its own.
 - No approval boundary is bypassed by moving a card.
-- The UI is a static SPA (Vite) so it fits free hosting tiers such as Cloudflare.
+- The UI is a Next.js 16 app with no database, so it fits free hosting tiers (Cloudflare via OpenNext, or Vercel).
 
 ## Columns
 
