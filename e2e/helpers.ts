@@ -3,9 +3,9 @@ import { expect, type APIRequestContext, type Locator, type Page } from "@playwr
 export const BOT_TOKEN = "e2e-bot-token-0123456789abcdefghijklmnopq";
 
 /** Calls an MCP tool as an agent would. */
-export async function tool(request: APIRequestContext, name: string, args: Record<string, unknown>) {
+export async function tool(request: APIRequestContext, name: string, args: Record<string, unknown>, token = BOT_TOKEN) {
 	const response = await request.post("/api/mcp", {
-		headers: { Authorization: `Bearer ${BOT_TOKEN}` },
+		headers: { Authorization: `Bearer ${token}` },
 		data: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } },
 	});
 	const body = await response.json();

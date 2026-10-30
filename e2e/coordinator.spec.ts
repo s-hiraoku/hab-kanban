@@ -12,7 +12,7 @@ async function rpc(request: import("@playwright/test").APIRequestContext, method
 
 test("the MCP server offers what the coordinating Bot's routine calls", async ({ request }) => {
 	const init = await rpc(request, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
-	expect(init.serverInfo.version).toBe("0.3.0");
+	expect(init.serverInfo.version).toBe("0.4.0");
 	const { tools } = await rpc(request, "tools/list");
 	const byName = new Map(tools.map((item: { name: string }) => [item.name, item]));
 	for (const name of ["list_run_requests", "pass_run", "start_run", "finish_run"]) expect(byName.has(name), name).toBe(true);
