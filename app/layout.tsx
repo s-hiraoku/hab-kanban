@@ -10,8 +10,8 @@ import "./globals.css";
 const sans = IBM_Plex_Sans_JP({ weight: ["400", "500", "700"], display: "swap", preload: false, variable: "--font-plex-sans-jp" });
 
 export const metadata: Metadata = {
-	title: "Grok Bot Kanban",
-	description: "Kanban for Grok Bot studio agents",
+	title: "HAB Kanban",
+	description: "Kanban for the agents connected through HAB",
 };
 
 export const viewport: Viewport = {

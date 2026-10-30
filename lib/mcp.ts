@@ -135,7 +135,7 @@ const tools = {
 	},
 	update_card: {
 		description:
-			"Edit a card's title, body, priority, repo, source, link, kind, or screening. Notes and assignees have their own tools. This never moves the card.",
+			"Edit a card's title, body, priority, repo, source, link, or the HAB Task and Relay message ids it points at (habTask, habMessage). Notes and assignees have their own tools. This never moves the card.",
 		readOnly: false,
 		input: z.object({ bot, card: cardRef, ...editable }).strict(),
 		run: async (ctx: McpContext, args: { bot: string; card: string } & Record<string, unknown>) => {
@@ -318,7 +318,7 @@ async function dispatch(ctx: McpContext, method: string, params: unknown): Promi
 			return {
 				protocolVersion,
 				capabilities: { tools: { listChanged: false } },
-				serverInfo: { name: "grokbot-kanban", title: "Grok Bot Kanban", version: "0.3.0" },
+				serverInfo: { name: "hab-kanban", title: "HAB Kanban", version: "0.4.0" },
 				instructions: MCP_INSTRUCTIONS,
 			};
 		}

@@ -45,20 +45,17 @@ export type CardView = {
 	title: string;
 	body: string;
 	notes: string;
-	kindLabel: string;
 	priority: string;
 	source: string | null;
 	repoLabel: string | null;
-	screening: string | null;
-	screened: boolean;
-	reviewer: string | null;
+	habTask: string | null;
+	habMessage: string | null;
 	createdBy: MemberView | null;
 	assignees: readonly MemberView[];
 	repo: { url: string; startingRef: string } | null;
 	originalLink: string | null;
-	kind: { type: "text" } | { type: "voice"; seconds: number };
 	links: { character: string | null; agent: string | null; pr: string | null };
-	/** The Grok Bot run this card waits on: requested until the bot picks it up, then working. */
+	/** The Bot run this card waits on: requested until the bot picks it up, then working. */
 	run: { bot: MemberView; status: "requested" | "working"; since: string; passedOn: { by: MemberView; since: string } | null } | null;
 	/** The Cursor agent working on the card: launching until Cursor confirms it, then running. */
 	cursor: { status: "launching" | "running"; agentUrl: string | null; by: MemberView; since: string } | null;
@@ -76,8 +73,8 @@ export type BotCardView = {
 	source: string | null;
 	originalLink: string | null;
 	priority: string;
-	kind: { type: "text" } | { type: "voice"; seconds: number };
-	screening: { by: string | null } | null;
+	habTask: string | null;
+	habMessage: string | null;
 	assignees: { id: MemberId; name: string }[];
 	createdBy: { id: MemberId; name: string } | null;
 	agentUrl: string | null;
@@ -155,7 +152,6 @@ export function initialsOf(name: string): string {
 
 export function toCardView(card: Card, bots: readonly BotProfile[], now: number): CardView {
 	const column = columnOf(card.state);
-	const screening = screeningLabel(card.content.screening);
 	return {
 		id: card.id,
 		shortId: card.id.replaceAll("-", "").slice(0, 6),
@@ -165,18 +161,15 @@ export function toCardView(card: Card, bots: readonly BotProfile[], now: number)
 		title: card.content.title,
 		body: card.content.body,
 		notes: card.content.notes,
-		kindLabel: card.content.kind.type === "text" ? "text" : `voice ${card.content.kind.seconds}s`,
 		priority: card.content.priority,
 		source: card.content.source,
 		repoLabel: repoLabel(card.content.repo?.url ?? null),
-		screening,
-		screened: card.content.screening !== null,
-		reviewer: card.content.screening?.by ?? null,
+		habTask: card.content.habTask,
+		habMessage: card.content.habMessage,
 		createdBy: card.createdBy ? memberOf(card.createdBy, bots) : null,
 		assignees: card.content.assignees.map((id) => memberOf(id, bots)),
 		repo: card.content.repo ? { url: card.content.repo.url, startingRef: card.content.repo.startingRef } : null,
 		originalLink: card.content.originalLink,
-		kind: card.content.kind,
 		links: {
 			character: card.content.originalLink,
 			agent: agentHref(card.state),
@@ -216,8 +209,8 @@ export function toBotCard(card: Card, bots: readonly BotProfile[]): BotCardView 
 		source: card.content.source,
 		originalLink: card.content.originalLink,
 		priority: card.content.priority,
-		kind: card.content.kind,
-		screening: card.content.screening,
+		habTask: card.content.habTask,
+		habMessage: card.content.habMessage,
 		assignees: card.content.assignees.map((id) => ({ id, name: memberOf(id, bots).name })),
 		createdBy: card.createdBy ? { id: card.createdBy, name: memberOf(card.createdBy, bots).name } : null,
 		agentUrl: agentHref(card.state),
@@ -241,13 +234,6 @@ export function toBotCard(card: Card, bots: readonly BotProfile[]): BotCardView 
 				}
 			: null,
 	};
-}
-
-function screeningLabel(screening: { by: string | null } | null): string | null {
-	if (!screening) return null;
-	if (screening.by === "grok") return "screened · grok";
-	if (screening.by) return `screened · ${screening.by}`;
-	return "screened";
 }
 
 function repoLabel(url: string | null): string | null {

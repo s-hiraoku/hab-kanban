@@ -37,7 +37,7 @@ export type OwnerCommand =
 	| { type: "create"; content: CardContent }
 	| { type: "edit"; cardId: CardId; patch: ContentPatch }
 	| { type: "move"; cardId: CardId; to: ParkColumn }
-	/** Ask a Grok Bot to run the card. Without a bot, the first bot assigned to the card. */
+	/** Ask a Bot to run the card. Without a bot, the first bot assigned to the card. */
 	| { type: "run"; cardId: CardId; bot: string | null }
 	/** Hand the card to a Cursor cloud agent, which works on the card's repository and opens a PR. */
 	| { type: "cursor"; cardId: CardId }
@@ -89,7 +89,7 @@ export type BoardSummary = {
 };
 
 /**
- * What a bot may do. `actor` is the calling bot's name as it appears in its Grok Bot profile.
+ * What a bot may do. `actor` is the calling bot's name as it appears in its Bot profile.
  * A new name joins the roster on first use. A bot may move a card to any column.
  */
 export type BotBoard = {
@@ -126,7 +126,7 @@ const OUTCOME: Record<RunOutcome, { column: Column; label: string }> = {
 export type BoardDeps = {
 	store: Store;
 	now: () => Instant;
-	/** null when CURSOR_API_KEY is not set; Run then offers Grok Bots only. */
+	/** null when CURSOR_API_KEY is not set; Run then offers Bots only. */
 	cursor?: CursorClient | null;
 };
 
@@ -549,7 +549,7 @@ async function requestRun(deps: BoardDeps, cardId: CardId, botId: string | null)
 	if (!card) return { board: await viewOf(deps), notice: null, error: "not_found" };
 	const roster = await rosterOf(deps.store);
 	const bot = botId ? roster.find((item) => item.id === botId) : runnerOf(card.content.assignees, roster);
-	if (!bot) throw new BoardInputError(botId ? "That bot is not on the roster." : "Assign a Grok Bot to this card first, then run it.");
+	if (!bot) throw new BoardInputError(botId ? "That bot is not on the roster." : "Assign a Bot to this card first, then run it.");
 	if (card.state.cursorRun) throw new BoardInputError("A Cursor agent is on this card. Cancel it first.");
 	const current = card.state.botRun;
 	if (!current && !RUNNABLE.includes(card.state.column)) throw new BoardInputError("Run works on cards in Inbox, Todo, or In Progress. Move the card back to Todo to run it again.");

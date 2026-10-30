@@ -45,7 +45,7 @@ test("MCP needs the bot token and speaks JSON-RPC", async () => {
 	expect(init.body!.result).toMatchObject({
 		protocolVersion: "2025-03-26",
 		capabilities: { tools: {} },
-		serverInfo: { name: "grokbot-kanban" },
+		serverInfo: { name: "hab-kanban" },
 	});
 
 	const note = await mcp(botRequest("POST", "/api/mcp", { jsonrpc: "2.0", method: "notifications/initialized" }));
@@ -128,7 +128,7 @@ test("a bot moves cards as work progresses and signs each move", async () => {
 	expect(nowhere.body!.error ?? nowhere.body!.result.isError).toBeTruthy();
 });
 
-test("the owner runs a card and the assigned Grok Bot carries it out", async () => {
+test("the owner runs a card and the assigned Bot carries it out", async () => {
 	const created = await call("create_card", { bot: "Ops", title: "run me" });
 	await call("create_card", { bot: "Scout", title: "someone else's" });
 	const unassigned = await command(ownerRequest(holder.current!, { type: "run", cardId: created.card.id, bot: null }));

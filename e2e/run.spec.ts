@@ -22,7 +22,7 @@ test("Run on a card with no Bot assignee asks which Bot, drawn above the cards b
 	for (let index = 0; index < 3; index += 1) await tool(request, "create_card", { bot: "Scout", title: `below ${unique()}` });
 	await signIn(page);
 
-	await cardTitled(page, title).getByRole("button", { name: /Run with a Grok Bot/ }).click();
+	await cardTitled(page, title).getByRole("button", { name: /Run with a Bot/ }).click();
 	await expectFullyVisible(runPicker(page));
 	await runPicker(page).getByRole("option", { name: "Scout" }).click();
 	await expect(runStatus(page, title)).toHaveText("Run requested");
@@ -38,7 +38,7 @@ test("menus on a card at the bottom of the screen open where every item can be p
 	const card = cardTitled(page, title);
 	await card.scrollIntoViewIfNeeded();
 
-	await card.getByRole("button", { name: /Run with a Grok Bot/ }).click();
+	await card.getByRole("button", { name: /Run with a Bot/ }).click();
 	await expectFullyVisible(runPicker(page));
 	await runPicker(page).locator("[role=option]:not([data-disabled=true])").last().hover();
 	await page.keyboard.press("Escape");

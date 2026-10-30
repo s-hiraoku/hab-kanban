@@ -18,12 +18,13 @@ const repoSchema = z.object({
 	startingRef: z.string().min(1).max(200).default("main"),
 });
 
-const kindSchema = z.discriminatedUnion("type", [
-	z.object({ type: z.literal("text") }).strict(),
-	z.object({ type: z.literal("voice"), seconds: z.number().int().positive().max(3600) }).strict(),
-]);
-
-const screeningSchema = z.object({ by: z.string().max(40).nullable() }).strict().nullable();
+/** A HAB Task or Relay message id, kept as given. One line of printable text, no spaces. */
+const habRef = z
+	.string()
+	.trim()
+	.min(1)
+	.max(200)
+	.regex(/^[\x21-\x7e]+$/, "a HAB id is one word of printable ASCII");
 
 /** Bot ids or names, "owner", or (for a bot caller) "me". The board resolves them. */
 export const memberRefsSchema = z.array(z.string().trim().min(1).max(40)).max(10);
@@ -37,8 +38,8 @@ const contentSchema = z
 		source: z.string().max(200).nullable().default(null),
 		originalLink: httpsUrl.nullable().default(null),
 		priority: z.enum(["low", "normal", "high"]).default("normal"),
-		kind: kindSchema.default({ type: "text" }),
-		screening: screeningSchema.default(null),
+		habTask: habRef.nullable().default(null),
+		habMessage: habRef.nullable().default(null),
 		assignees: memberRefsSchema.default([]),
 	})
 	.strict();
@@ -53,8 +54,8 @@ export const contentPatchFields = z
 		source: z.string().max(200).nullable().optional(),
 		originalLink: httpsUrl.nullable().optional(),
 		priority: z.enum(["low", "normal", "high"]).optional(),
-		kind: kindSchema.optional(),
-		screening: screeningSchema.optional(),
+		habTask: habRef.nullable().optional(),
+		habMessage: habRef.nullable().optional(),
 		assignees: memberRefsSchema.optional(),
 	})
 	.strict();
@@ -71,8 +72,8 @@ export const newCardBodySchema = z
 		source: z.string().max(200).nullable().optional(),
 		originalLink: httpsUrl.nullable().optional(),
 		priority: z.enum(["low", "normal", "high"]).optional(),
-		kind: kindSchema.optional(),
-		screening: screeningSchema.optional(),
+		habTask: habRef.nullable().optional(),
+		habMessage: habRef.nullable().optional(),
 		assignees: memberRefsSchema.optional(),
 	})
 	.strict();
@@ -156,8 +157,8 @@ export function contentFromNewCard(raw: z.infer<typeof newCardBodySchema>): Card
 		source: raw.source,
 		originalLink: raw.originalLink,
 		priority: raw.priority,
-		kind: raw.kind,
-		screening: raw.screening,
+		habTask: raw.habTask,
+		habMessage: raw.habMessage,
 		assignees: raw.assignees,
 	});
 	return brandContent(content);
@@ -186,8 +187,8 @@ export function brandPatch(patch: z.infer<typeof contentPatchSchema>): ContentPa
 	if (patch.source !== undefined) next.source = patch.source;
 	if (patch.originalLink !== undefined) next.originalLink = (patch.originalLink as HttpsUrl | null) ?? null;
 	if (patch.priority !== undefined) next.priority = patch.priority;
-	if (patch.kind !== undefined) next.kind = patch.kind;
-	if (patch.screening !== undefined) next.screening = patch.screening;
+	if (patch.habTask !== undefined) next.habTask = patch.habTask;
+	if (patch.habMessage !== undefined) next.habMessage = patch.habMessage;
 	if (patch.assignees !== undefined) next.assignees = patch.assignees;
 	return next;
 }

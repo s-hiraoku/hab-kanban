@@ -57,7 +57,7 @@ type DrawerTarget = { mode: "create" } | { mode: "edit"; cardId: string; dialog:
 const OWNER: MemberView = { id: "owner", name: "You", kind: "owner", avatar: null, color: "#f2b33d", initials: "You" };
 const MEMBER_DROP = "member:";
 const FOLDABLE: readonly Column[] = ["done", "wontDo"];
-const FOLD_KEY = "grokbot-kanban.folded";
+const FOLD_KEY = "hab-kanban.folded";
 
 /** Starts a drag only from the card body, never from its buttons, fields, or links. */
 function blocksDrag(target: EventTarget | null): boolean {
@@ -499,7 +499,7 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 								<ChevronLeftIcon className="size-5" />
 							</a>
 						) : null}
-						<h1 className="text-[15px] font-bold tracking-tight whitespace-nowrap">Grok Bot Kanban</h1>
+						<h1 className="text-[15px] font-bold tracking-tight whitespace-nowrap">HAB Kanban</h1>
 					</div>
 					<label className="relative order-3 flex basis-full items-center md:order-none md:max-w-[420px] md:flex-1 md:basis-auto">
 						<span className="sr-only">Search cards</span>

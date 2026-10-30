@@ -45,7 +45,7 @@ test("every drawer menu opens in full, and Escape closes the menu before the dra
 	await expect(openMenu(page)).toHaveCount(0);
 	await expect(panel).toBeVisible();
 
-	await panel.getByRole("button", { name: "Run with a Grok Bot" }).click();
+	await panel.getByRole("button", { name: "Run with a Bot" }).click();
 	await expectFullyVisible(runPicker(page));
 	await page.keyboard.press("Escape");
 	await expect(panel).toBeVisible();

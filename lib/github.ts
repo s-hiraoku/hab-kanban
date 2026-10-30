@@ -52,7 +52,7 @@ export function createGitHubOAuth(options: {
 			const grant = (await exchange.json()) as { access_token?: unknown };
 			if (typeof grant.access_token !== "string" || !grant.access_token) return null;
 			const response = await fetchImpl(`${api}/user`, {
-				headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${grant.access_token}`, "User-Agent": "grokbot-kanban", "X-GitHub-Api-Version": "2022-11-28" },
+				headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${grant.access_token}`, "User-Agent": "hab-kanban", "X-GitHub-Api-Version": "2022-11-28" },
 				signal: AbortSignal.timeout(TIMEOUT_MS),
 			});
 			if (!response.ok) return null;

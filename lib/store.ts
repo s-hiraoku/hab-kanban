@@ -44,8 +44,8 @@ type Row = {
 	source: string | null;
 	originalLink: string | null;
 	priority: string;
-	kind: unknown;
-	screening: unknown;
+	habTask: string | null;
+	habMessage: string | null;
 	assignees: unknown;
 	createdBy: string | null;
 	rank: string;
@@ -149,11 +149,8 @@ const contentSchema = z.object({
 	source: z.string().nullable(),
 	originalLink: z.string().nullable(),
 	priority: z.enum(["low", "normal", "high"]),
-	kind: z.discriminatedUnion("type", [
-		z.object({ type: z.literal("text") }),
-		z.object({ type: z.literal("voice"), seconds: z.number() }),
-	]),
-	screening: z.object({ by: z.string().nullable() }).nullable(),
+	habTask: z.string().nullable(),
+	habMessage: z.string().nullable(),
 	assignees: z.array(z.string()),
 });
 
@@ -319,8 +316,8 @@ function contentColumns(content: CardContent): Record<string, unknown> {
 		source: content.source,
 		originalLink: content.originalLink,
 		priority: content.priority,
-		kind: content.kind,
-		screening: content.screening,
+		habTask: content.habTask,
+		habMessage: content.habMessage,
 		assignees: [...content.assignees],
 	};
 }
@@ -348,8 +345,8 @@ function readContent(row: Row): CardContent {
 		source: row.source,
 		originalLink: row.originalLink,
 		priority: row.priority,
-		kind: row.kind,
-		screening: row.screening,
+		habTask: row.habTask ?? null,
+		habMessage: row.habMessage ?? null,
 		assignees: row.assignees ?? [],
 	});
 	return {
