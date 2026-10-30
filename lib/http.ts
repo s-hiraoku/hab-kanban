@@ -1,7 +1,7 @@
 import type { User } from "./accounts";
-import { bearerMatches, mintBot, mintOwner, tokenFromCookie, type Bot, type Owner } from "./auth";
+import { bearerMatches, bearerToken, mintBot, mintOwner, tokenFromCookie, type Bot, type Owner } from "./auth";
 import { BadRequest } from "./parse";
-import { getAccounts, type Env } from "./runtime";
+import { getAccounts, getBoard, type Env } from "./runtime";
 
 export function json(body: unknown, status = 200, headers?: HeadersInit): Response {
 	return Response.json(body, { status, headers });
@@ -82,7 +82,10 @@ export async function requireOwner(req: Request, env: Env): Promise<Owner | Resp
 	return owner;
 }
 
-export function requireBot(req: Request, env: Env): Bot | Response {
-	if (!bearerMatches(req.headers.get("authorization"), env.botToken)) return unauthorized();
-	return mintBot();
+/** A connection's own token, or while agents move over, the shared BOT_TOKEN. */
+export async function requireBot(req: Request, env: Env): Promise<Bot | Response> {
+	const header = req.headers.get("authorization");
+	if (env.botToken && bearerMatches(header, env.botToken)) return mintBot({ kind: "shared" });
+	const token = bearerToken(header);
+	return (token && (await getBoard().connect(token))) || unauthorized();
 }

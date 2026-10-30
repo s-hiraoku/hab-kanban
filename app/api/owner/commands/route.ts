@@ -18,7 +18,7 @@ export async function POST(req: Request): Promise<Response> {
 		if (result.error === "not_found") return json({ error: "not_found", board: result.board, notice: "That card or bot no longer exists. The board was refreshed." }, 404);
 		if (result.error === "busy") return json({ error: "busy", notice: "Someone else changed this card at the same moment. Try again." }, 503);
 		if (result.error === "bad_request") return json({ error: "bad_request", board: result.board, notice: result.notice }, 400);
-		return json({ board: result.board, notice: result.notice });
+		return json({ board: result.board, notice: result.notice, ...(result.token ? { token: result.token } : {}) });
 	} catch (error) {
 		if (error instanceof BadRequest) return badRequest();
 		throw error;
@@ -36,5 +36,6 @@ function toCommand(raw: ReturnType<typeof ownerCommandSchema.parse>): OwnerComma
 	if (raw.type === "saveBot") return { type: "saveBot", id: raw.id, profile: raw.profile };
 	if (raw.type === "deleteBot") return { type: "deleteBot", id: raw.id };
 	if (raw.type === "deleteCard") return { type: "deleteCard", cardId: raw.cardId as CardId };
+	if (raw.type === "createConnection" || raw.type === "updateConnection" || raw.type === "deleteConnection") return raw;
 	return { type: "setOwnerAvatar", avatar: raw.avatar || null };
 }

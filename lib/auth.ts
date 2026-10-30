@@ -6,13 +6,18 @@ const OWNER = Symbol.for("hab-kanban.owner");
 const BOT = Symbol.for("hab-kanban.bot");
 
 export type Owner = { readonly [capability]: typeof OWNER };
-export type Bot = { readonly [capability]: typeof BOT };
+/**
+ * Who a bot request may act as. A connection's token acts only as the Bots it lists. The shared BOT_TOKEN,
+ * kept while agents move to their own tokens, still lets a caller name any Bot, as before.
+ */
+export type BotScope = { kind: "shared" } | { kind: "connection"; connectionId: string; members: readonly string[] };
+export type Bot = { readonly [capability]: typeof BOT; readonly scope: BotScope };
 
 export function mintOwner(): Owner {
 	return { [capability]: OWNER };
 }
-export function mintBot(): Bot {
-	return { [capability]: BOT };
+export function mintBot(scope: BotScope): Bot {
+	return { [capability]: BOT, scope };
 }
 
 export function isOwner(value: Owner): boolean {
@@ -29,6 +34,11 @@ export const SESSION_DAYS = 30;
 const MAX_AGE = SESSION_DAYS * 24 * 60 * 60;
 const SIGN_IN_MAX_AGE = 10 * 60;
 
+/** A connection's token. The prefix makes a leaked one easy to recognize and search for. */
+export function connectionToken(): string {
+	return `habk_${randomToken()}`;
+}
+
 /** A fresh random secret, for session tokens, OAuth state, and PKCE verifiers. */
 export function randomToken(): string {
 	return randomBytes(32).toString("base64url");
@@ -43,11 +53,14 @@ export function pkceChallenge(verifier: string): string {
 	return createHash("sha256").update(verifier).digest("base64url");
 }
 
+export function bearerToken(header: string | null): string | null {
+	if (!header) return null;
+	return /^Bearer (.+)$/.exec(header)?.[1] ?? null;
+}
+
 export function bearerMatches(header: string | null, expected: string): boolean {
-	if (!header) return false;
-	const match = /^Bearer (.+)$/.exec(header);
-	if (!match?.[1]) return false;
-	return safeEqual(match[1], expected);
+	const token = bearerToken(header);
+	return token !== null && safeEqual(token, expected);
 }
 
 export function sessionCookie(token: string, secure: boolean): string {

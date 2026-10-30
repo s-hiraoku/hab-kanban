@@ -26,8 +26,8 @@ const habRef = z
 	.max(200)
 	.regex(/^[\x21-\x7e]+$/, "a HAB id is one word of printable ASCII");
 
-/** Bot ids or names, "owner", or (for a bot caller) "me". The board resolves them. */
-export const memberRefsSchema = z.array(z.string().trim().min(1).max(40)).max(10);
+/** Bot ids, names, or HAB addresses, "owner", or (for a bot caller) "me". The board resolves them. */
+export const memberRefsSchema = z.array(z.string().trim().min(1).max(101)).max(10);
 
 const contentSchema = z
 	.object({
@@ -106,8 +106,12 @@ export const botProfileSchema = z
 			.regex(/^#[0-9a-fA-F]{6}$/)
 			.nullable()
 			.default(null),
+		// Omitted keeps the current address; null or "" clears it. The board checks the HAB format.
+		address: z.string().trim().max(101).nullable().optional(),
 	})
 	.strict();
+
+const connectionMembers = z.array(z.string().min(1).max(64)).max(20);
 
 
 const columnSchema = z.enum(["inbox", "todo", "inProgress", "inReview", "done", "wontDo"]);
@@ -129,6 +133,9 @@ export const ownerCommandSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("deleteCard"), cardId: z.string().uuid() }).strict(),
 	// null goes back to the default owner icon.
 	z.object({ type: z.literal("setOwnerAvatar"), avatar: avatarSchema }).strict(),
+	z.object({ type: z.literal("createConnection"), name: z.string().max(60), members: connectionMembers }).strict(),
+	z.object({ type: z.literal("updateConnection"), id: z.string().uuid(), name: z.string().max(60), members: connectionMembers }).strict(),
+	z.object({ type: z.literal("deleteConnection"), id: z.string().uuid() }).strict(),
 ]);
 
 export function parseJson(raw: unknown): unknown {

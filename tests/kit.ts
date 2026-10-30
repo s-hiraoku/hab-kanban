@@ -27,6 +27,7 @@ export async function boot(options: { cursor?: CursorClient } = {}): Promise<Tes
 		store: createStore(db as never),
 		now: () => now as Instant,
 		cursor: options.cursor ?? null,
+		sharedToken: true,
 	});
 	const accounts = createAccounts(db);
 	const env: Env = {

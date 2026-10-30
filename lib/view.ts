@@ -1,4 +1,4 @@
-import type { BotProfile } from "./bots";
+import { agentOf, type BotProfile, type Connection } from "./bots";
 import { COLUMNS, OWNER_MEMBER, agentHref, columnOf, prHref, type Card, type CardId, type Column, type MemberId } from "./domain";
 
 export type BoardView = {
@@ -7,6 +7,18 @@ export type BoardView = {
 	owner: { avatar: string };
 	/** Whether Run can hand cards to a Cursor cloud agent (CURSOR_API_KEY is set). */
 	cursor: { enabled: boolean };
+	/** The agents' tokens, by name and the Bots each may act as. The tokens themselves are never shown again. */
+	connections: readonly ConnectionView[];
+	/** Whether the shared BOT_TOKEN still works alongside the connections' tokens. */
+	sharedToken: boolean;
+};
+
+export type ConnectionView = {
+	id: string;
+	name: string;
+	members: readonly MemberId[];
+	createdAt: string;
+	lastUsed: string | null;
 };
 
 export type MemberView = {
@@ -24,6 +36,9 @@ export type BotView = MemberView & {
 	assigned: number;
 	created: number;
 	lastSeen: string | null;
+	/** Its HAB address, and the agent part of it (hermes for lab@hermes.hab). */
+	address: string | null;
+	agent: string | null;
 };
 
 export type ColumnView = {
@@ -83,7 +98,12 @@ export type BotCardView = {
 	cursor: { status: "launching" | "running"; agentUrl: string | null; by: string; startedAt: string } | null;
 };
 
-export function toBoardView(cards: readonly Card[], bots: readonly BotProfile[], now: number, options: { cursorEnabled: boolean } = { cursorEnabled: false }): BoardView {
+export function toBoardView(
+	cards: readonly Card[],
+	bots: readonly BotProfile[],
+	now: number,
+	options: { cursorEnabled: boolean; connections?: readonly Connection[]; sharedToken?: boolean } = { cursorEnabled: false },
+): BoardView {
 	const columns = COLUMNS.map((column) => {
 		const inColumn = cards
 			.filter((card) => columnOf(card.state) === column.id)
@@ -101,6 +121,14 @@ export function toBoardView(cards: readonly Card[], bots: readonly BotProfile[],
 		bots: bots.filter((bot) => bot.id !== OWNER_MEMBER).map((bot) => toBotView(bot, cards, now)),
 		owner: { avatar: ownerAvatarUrl(bots) },
 		cursor: { enabled: options.cursorEnabled },
+		connections: (options.connections ?? []).map((connection) => ({
+			id: connection.id,
+			name: connection.name,
+			members: connection.members.filter((id) => bots.some((bot) => bot.id === id)),
+			createdAt: new Date(connection.createdAt).toISOString(),
+			lastUsed: connection.lastUsedAt === null ? null : ageLabel(connection.lastUsedAt, now),
+		})),
+		sharedToken: options.sharedToken ?? false,
 	};
 }
 
@@ -112,6 +140,8 @@ export function toBotView(bot: BotProfile, cards: readonly Card[], now: number):
 		assigned: cards.filter((card) => card.content.assignees.includes(bot.id)).length,
 		created: cards.filter((card) => card.createdBy === bot.id).length,
 		lastSeen: bot.lastSeenAt === null ? null : ageLabel(bot.lastSeenAt, now),
+		address: bot.address,
+		agent: bot.address ? agentOf(bot.address) : null,
 	};
 }
 

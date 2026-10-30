@@ -6,16 +6,16 @@ import type { BotCardView } from "./view";
 
 /**
  * A stateless MCP server over Streamable HTTP. Every POST carries one JSON-RPC message or a batch,
- * and every answer is a plain JSON body. Grok Bot adds it as a Remote HTTPS custom server with an
- * Authorization header, and the xAI API reaches it the same way through a `mcp` tool.
+ * and every answer is a plain JSON body. Each agent connected through HAB (Grok Bot, Dots, Hermes,
+ * Claude Code, Codex) adds it as a remote HTTP server with its connection's token in the Authorization header.
  */
 
 export const MCP_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 const LATEST = MCP_PROTOCOL_VERSIONS[0];
 
-export const MCP_INSTRUCTIONS = `This is the Grok Bot kanban. Cards are work items. Columns: ${COLUMNS.map((c) => `${c.id} (${c.label})`).join(", ")}.
-Always pass "bot" with your own Grok Bot name, exactly as in your profile. A new name joins the roster with its own icon.
-The board cannot read your Grok Bot profile picture, so send it yourself: call update_my_profile with avatar set to your profile image as a data URL (or an https URL), once when you first connect and again whenever your picture changes. If you do not have the image, ask the owner to attach it in chat with you.
+export const MCP_INSTRUCTIONS = `This is HAB Kanban, the shared board for the agents connected through HAB. Cards are work items. Columns: ${COLUMNS.map((c) => `${c.id} (${c.label})`).join(", ")}.
+You act as a Bot on the roster. Pass "bot" with your HAB address (for example lab@hermes.hab) or your Bot name. If your connection holds only one Bot you may leave it out; if it holds several, say which one you are acting as.
+Your icon on the board can be set with update_my_profile (a data URL of your profile image, an https URL, or one emoji). The owner can also set it.
 Start with board_summary to see your assigned cards. Claim a card with assign_card before working on it, and leave findings with add_note so the owner and other bots can follow the handoff.
 You can create, edit, assign, annotate, and move cards. Move a card with move_card when its work progresses: inProgress when you start, inReview when it waits for a check, done when finished, wontDo when dropped, todo when ready for work, inbox to send it back. Say why in reason.
 When the owner presses Run on a card, it becomes a run request for one Bot. Check for yours with list_run_requests (a routine every few minutes does this). For each request: call start_run, read the card with get_card, do the work it describes, leave progress with add_note, then call finish_run with done, review, or blocked and a short summary. If finish_run says the run is gone, the owner cancelled it; stop and leave a note.
@@ -31,7 +31,13 @@ type JsonRpcResponse =
 
 export type McpContext = { board: BotBoard; boardUrl: string };
 
-const bot = z.string().trim().min(1).max(40).describe("Your Grok Bot name, as in your Grok Bot profile.");
+const bot = z
+	.string()
+	.trim()
+	.min(1)
+	.max(101)
+	.optional()
+	.describe("The Bot you act as: its HAB address (lab@hermes.hab) or name. Optional when your connection holds a single Bot.");
 const cardRef = z
 	.string()
 	.trim()
@@ -47,7 +53,7 @@ const tools = {
 		description:
 			"Counts per column, the cards assigned to you, and the runs the owner asked you to do. Call this first in a session.",
 		readOnly: true,
-		input: z.object({ bot: bot.optional() }).strict(),
+		input: z.object({ bot }).strict(),
 		run: async (ctx: McpContext, args: { bot?: string }) => {
 			const summary = await ctx.board.summary(args.bot ?? null);
 			return {
@@ -64,8 +70,8 @@ const tools = {
 		input: z
 			.object({ bot, everyone: z.boolean().optional().describe("List every Bot's run requests, not only yours. For the Bot that coordinates runs.") })
 			.strict(),
-		run: async (ctx: McpContext, args: { bot: string; everyone?: boolean }) => {
-			const cards = await ctx.board.runRequests(args.bot, args.everyone ?? false);
+		run: async (ctx: McpContext, args: { bot?: string; everyone?: boolean }) => {
+			const cards = await ctx.board.runRequests(args.bot ?? null, args.everyone ?? false);
 			const ordered = [...cards].sort((a, b) => (a.run?.requestedAt ?? "").localeCompare(b.run?.requestedAt ?? ""));
 			return { count: ordered.length, cards: ordered.map((card) => ({ ...compact(card, ctx), run: card.run })) };
 		},
@@ -76,7 +82,7 @@ const tools = {
 		readOnly: true,
 		input: z
 			.object({
-				bot: bot.optional(),
+				bot,
 				column: column.optional(),
 				assignee: z.string().trim().min(1).max(40).optional(),
 				unassigned: z.boolean().optional(),
@@ -121,10 +127,10 @@ const tools = {
 	},
 	create_card: {
 		description:
-			"File a new card in Inbox. Use externalId (for example the X post id) so a retry returns the same card instead of a duplicate. assignees takes bot names, \"me\", or \"owner\".",
+			"File a new card in Inbox. Use externalId (for example the HAB message id it came from) so a retry returns the same card instead of a duplicate. assignees takes Bot names or HAB addresses, \"me\", or \"owner\".",
 		readOnly: false,
 		input: newCardBodySchema.extend({ bot }),
-		run: async (ctx: McpContext, args: z.infer<typeof newCardBodySchema> & { bot: string }) => {
+		run: async (ctx: McpContext, args: z.infer<typeof newCardBodySchema> & { bot?: string }) => {
 			const { bot: actor, externalId, ...rest } = args;
 			const result = await ctx.board.create(
 				{ externalId: externalId ?? null, content: contentFromNewCard(rest) },
@@ -138,7 +144,7 @@ const tools = {
 			"Edit a card's title, body, priority, repo, source, link, or the HAB Task and Relay message ids it points at (habTask, habMessage). Notes and assignees have their own tools. This never moves the card.",
 		readOnly: false,
 		input: z.object({ bot, card: cardRef, ...editable }).strict(),
-		run: async (ctx: McpContext, args: { bot: string; card: string } & Record<string, unknown>) => {
+		run: async (ctx: McpContext, args: { bot?: string; card: string } & Record<string, unknown>) => {
 			const { bot: actor, card, ...patch } = args;
 			if (Object.keys(patch).length === 0) throw new BoardInputError("nothing to update");
 			const parsed = contentPatchSchema.safeParse(patch);
@@ -152,12 +158,12 @@ const tools = {
 			"Append a timestamped line, signed with your name, to the card's notes. Use it for findings, evidence links, and handoffs.",
 		readOnly: false,
 		input: z.object({ bot, card: cardRef, text: z.string().trim().min(1).max(4000) }).strict(),
-		run: async (ctx: McpContext, args: { bot: string; card: string; text: string }) =>
-			full(await required(ctx.board.addNote(args.card, args.text, args.bot)), ctx),
+		run: async (ctx: McpContext, args: { bot?: string; card: string; text: string }) =>
+			full(await required(ctx.board.addNote(args.card, args.text, args.bot ?? null)), ctx),
 	},
 	assign_card: {
 		description:
-			'Change who holds a card. With no add, remove, or set, it assigns you. Names can be bot names, "me", or "owner". A bot name that is new joins the roster.',
+			'Change who holds a card. With no add, remove, or set, it assigns you. Names can be Bot names or HAB addresses, "me", or "owner".',
 		readOnly: false,
 		input: z
 			.object({
@@ -168,8 +174,8 @@ const tools = {
 				set: memberRefsSchema.optional(),
 			})
 			.strict(),
-		run: async (ctx: McpContext, args: { bot: string; card: string; add?: string[]; remove?: string[]; set?: string[] }) =>
-			full(await required(ctx.board.assign(args.card, { add: args.add, remove: args.remove, set: args.set }, args.bot)), ctx),
+		run: async (ctx: McpContext, args: { bot?: string; card: string; add?: string[]; remove?: string[]; set?: string[] }) =>
+			full(await required(ctx.board.assign(args.card, { add: args.add, remove: args.remove, set: args.set }, args.bot ?? null)), ctx),
 	},
 	move_card: {
 		description:
@@ -183,15 +189,15 @@ const tools = {
 				reason: z.string().max(500).optional().describe("Why it moved, for example the PR that fixed it."),
 			})
 			.strict(),
-		run: async (ctx: McpContext, args: { bot: string; card: string; to: ParkColumn; reason?: string }) =>
-			full(await required(ctx.board.move(args.card, args.to, args.reason ?? null, args.bot)), ctx),
+		run: async (ctx: McpContext, args: { bot?: string; card: string; to: ParkColumn; reason?: string }) =>
+			full(await required(ctx.board.move(args.card, args.to, args.reason ?? null, args.bot ?? null)), ctx),
 	},
 	start_run: {
 		description:
 			"Take a run request the owner gave you. The card moves to In Progress and shows you working. Then read it with get_card and do the work.",
 		readOnly: false,
 		input: z.object({ bot, card: cardRef }).strict(),
-		run: async (ctx: McpContext, args: { bot: string; card: string }) => full(await required(ctx.board.startRun(args.card, args.bot)), ctx),
+		run: async (ctx: McpContext, args: { bot?: string; card: string }) => full(await required(ctx.board.startRun(args.card, args.bot ?? null)), ctx),
 	},
 	finish_run: {
 		description:
@@ -205,15 +211,15 @@ const tools = {
 				summary: z.string().trim().min(1).max(4000),
 			})
 			.strict(),
-		run: async (ctx: McpContext, args: { bot: string; card: string; outcome: "done" | "review" | "blocked"; summary: string }) =>
-			full(await required(ctx.board.finishRun(args.card, args.outcome, args.summary, args.bot)), ctx),
+		run: async (ctx: McpContext, args: { bot?: string; card: string; outcome: "done" | "review" | "blocked"; summary: string }) =>
+			full(await required(ctx.board.finishRun(args.card, args.outcome, args.summary, args.bot ?? null)), ctx),
 	},
 	pass_run: {
 		description:
 			"For the coordinating Bot: record that you passed a run request on to the Bot it is for (run.bot from list_run_requests with everyone: true), after you asked that Bot to do it. The card shows who passed it on, and list_run_requests marks it so you do not pass it twice. The Bot it is for still calls start_run and finish_run itself. note says how you passed it on.",
 		readOnly: false,
 		input: z.object({ bot, card: cardRef, note: z.string().trim().max(1000).optional() }).strict(),
-		run: async (ctx: McpContext, args: { bot: string; card: string; note?: string }) => full(await required(ctx.board.passRun(args.card, args.note ?? null, args.bot)), ctx),
+		run: async (ctx: McpContext, args: { bot?: string; card: string; note?: string }) => full(await required(ctx.board.passRun(args.card, args.note ?? null, args.bot ?? null)), ctx),
 	},
 	hand_off_to_cursor: {
 		description:
@@ -226,8 +232,8 @@ const tools = {
 				instructions: z.string().trim().max(4000).optional().describe("What Cursor should know beyond the card: findings, files, acceptance checks."),
 			})
 			.strict(),
-		run: async (ctx: McpContext, args: { bot: string; card: string; instructions?: string }) => {
-			const result = await required(ctx.board.handOffToCursor(args.card, args.instructions ?? null, args.bot));
+		run: async (ctx: McpContext, args: { bot?: string; card: string; instructions?: string }) => {
+			const result = await required(ctx.board.handOffToCursor(args.card, args.instructions ?? null, args.bot ?? null));
 			return { message: result.message, card: full(result.card, ctx) };
 		},
 	},
@@ -253,9 +259,9 @@ const tools = {
 				color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 			})
 			.strict(),
-		run: async (ctx: McpContext, args: { bot: string; name?: string; role?: string; avatar?: string | null; color?: string }) => {
+		run: async (ctx: McpContext, args: { bot?: string; name?: string; role?: string; avatar?: string | null; color?: string }) => {
 			const { bot: actor, ...patch } = args;
-			const profile = await ctx.board.updateProfile(actor, patch);
+			const profile = await ctx.board.updateProfile(actor ?? null, patch);
 			// An uploaded image comes back as its board URL, not the whole data URL.
 			return { id: profile.id, name: profile.name, role: profile.role, avatar: profile.avatar ? new URL(profile.avatar, ctx.boardUrl).toString() : null, color: profile.color };
 		},
@@ -359,9 +365,9 @@ async function callTool(ctx: McpContext, params: unknown) {
 }
 
 export const ICON_NUDGE =
-	"Your icon on the board is still a placeholder. Call update_my_profile with avatar set to your Grok Bot profile image as a data URL (data:image/png;base64,..., square, about 128px, under 90 KB) or an https URL. If you do not have the image, ask the owner to attach it in chat with you.";
+	"Your icon on the board is still a placeholder. Call update_my_profile with avatar set to your profile image as a data URL (data:image/png;base64,..., square, about 128px, under 90 KB) or an https URL. If you do not have the image, ask the owner to attach it in chat with you.";
 
-/** Grok Bot never shares profile pictures with connectors, so a bot without an icon is reminded on every call until it sends one. */
+/** Agents rarely share their profile pictures with a connector, so a bot without an icon is reminded on every call until it sends one. */
 async function iconNudge(ctx: McpContext, args: unknown): Promise<string | null> {
 	const name = (args as { bot?: unknown } | null)?.bot;
 	if (typeof name !== "string" || !name.trim()) return null;

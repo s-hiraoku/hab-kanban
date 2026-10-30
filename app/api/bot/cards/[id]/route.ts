@@ -11,7 +11,7 @@ type Context = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, context: Context): Promise<Response> {
 	const config = env();
-	const bot = requireBot(req, config);
+	const bot = await requireBot(req, config);
 	if (bot instanceof Response) return bot;
 	const { id } = await context.params;
 	const card = await getBoard().bot(bot).get(id as CardId);
@@ -21,7 +21,7 @@ export async function GET(req: Request, context: Context): Promise<Response> {
 
 export async function PATCH(req: Request, context: Context): Promise<Response> {
 	const config = env();
-	const bot = requireBot(req, config);
+	const bot = await requireBot(req, config);
 	if (bot instanceof Response) return bot;
 	const { id } = await context.params;
 	try {

@@ -28,6 +28,16 @@ export const bots = sqliteTable("bots", {
 	color: text("color").notNull(),
 	createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 	lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
+	address: text("address"),
+});
+
+export const connections = sqliteTable("connections", {
+	id: text("id").primaryKey(),
+	name: text("name").notNull(),
+	tokenHash: text("token_hash").notNull(),
+	members: text("members", { mode: "json" }).notNull(),
+	createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+	lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
 });
 
 export const users = sqliteTable("users", {
