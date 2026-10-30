@@ -414,6 +414,7 @@ function toolError(message: string) {
 
 /** The tool's input as JSON Schema, as an MCP client reads it. */
 export function jsonSchemaOf(schema: z.ZodType): Record<string, unknown> {
-	const { $schema: _, ...out } = z.toJSONSchema(schema, { io: "input", unrepresentable: "any" });
+	const out: Record<string, unknown> = z.toJSONSchema(schema, { io: "input", unrepresentable: "any" });
+	delete out.$schema;
 	return out;
 }

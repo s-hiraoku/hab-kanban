@@ -4,6 +4,10 @@
 	"main": ".open-next/worker.js",
 	"compatibility_date": "2026-10-01",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	// Served at hab-kanban.hiraoku.dev. hiraoku.dev must be a zone in the same Cloudflare account; the deploy
+	// creates the DNS record and certificate. The workers.dev address stays on while agents move to the new URL.
+	"routes": [{ "pattern": "hab-kanban.hiraoku.dev", "custom_domain": true }],
+	"workers_dev": true,
 	"assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
 	"d1_databases": [
 		{

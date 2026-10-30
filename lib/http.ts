@@ -3,8 +3,6 @@ import { bearerMatches, mintBot, mintOwner, tokenFromCookie, type Bot, type Owne
 import { BadRequest } from "./parse";
 import { getAccounts, type Env } from "./runtime";
 
-type RouteContext = { params: Promise<Record<string, string>> };
-
 export function json(body: unknown, status = 200, headers?: HeadersInit): Response {
 	return Response.json(body, { status, headers });
 }
@@ -61,6 +59,11 @@ export function requestIsSecure(req: Request): boolean {
 /** The signed-in user, from the session cookie. */
 export async function userFromRequest(req: Request, now = Date.now()): Promise<User | null> {
 	return getAccounts().userFor(tokenFromCookie(req.headers.get("cookie")), now);
+}
+
+/** Whether the session cookie a page received belongs to the owner. Pages call this rather than reading the clock while they render. */
+export async function sessionIsOwner(sessionToken: string | undefined, env: Env, now = Date.now()): Promise<boolean> {
+	return isOwnerAccount(await getAccounts().userFor(sessionToken, now), env);
 }
 
 /** Until each user has a board of their own, only the owner's GitHub account may use this one. */

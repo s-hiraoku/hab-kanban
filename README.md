@@ -34,7 +34,7 @@ The app runs on Cloudflare Workers through [OpenNext](https://opennext.js.org/cl
 
 `npm run preview` builds the Worker and serves it with wrangler, closer to production than `next dev`.
 
-`npm test` runs on an in-memory `node:sqlite` with the same migrations, so it needs neither D1 nor wrangler. The Playwright tests (`npm run test:e2e`) have not been moved to the Worker runtime yet.
+`npm test` runs on an in-memory `node:sqlite` with the same migrations, so it needs neither D1 nor wrangler. The Playwright tests (`npm run test:e2e`) build the Worker with OpenNext and serve it with `wrangler dev` on a fresh local D1 under `.wrangler/e2e`, with stand-in GitHub and Cursor servers and the test values in `e2e/e2e.vars`. Each run starts from an empty board. Set `E2E_SKIP_BUILD=1` to reuse the last build. CI runs them too.
 
 ## Environment variables
 
@@ -61,7 +61,7 @@ The board asks GitHub for no scopes, only your public profile, and uses PKCE and
 2. Apply the schema with `npm run db:migrate`. Run it again after pulling a change that adds a file to `migrations/`.
 3. Set the secrets with `npx wrangler secret put <NAME>` for each required variable above.
 4. Deploy with `npm run deploy`.
-5. To serve it on your own domain, add a custom domain to the Worker in the Cloudflare dashboard. The GitHub OAuth app's callback URL and every agent's `/api/mcp` URL move with it.
+5. The board is served at https://hab-kanban.hiraoku.dev, set as a custom domain in `routes` in `wrangler.jsonc`. `hiraoku.dev` must be a zone in the same Cloudflare account; the deploy then creates the DNS record and certificate. To use another domain, change that pattern. The GitHub OAuth app's callback URL and every agent's `/api/mcp` URL move with it. The `workers.dev` address stays on until every agent has moved.
 
 ## Using the board
 

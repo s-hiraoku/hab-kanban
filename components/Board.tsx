@@ -21,7 +21,7 @@ import {
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronLeftIcon, ChevronRightIcon, LogOutIcon, PlusIcon, SearchIcon, SettingsIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import { MemberAvatar } from "@/components/Avatar";
 import BotsPanel from "@/components/BotsPanel";
 import CardDrawer from "@/components/CardDrawer";
@@ -84,16 +84,150 @@ class CardTouchSensor extends TouchSensor {
 	];
 }
 
+function toLogin() {
+	window.location.assign(new URL("/login", window.location.href));
+}
+
+// Won't Do starts folded so the working columns fit a laptop screen. The choice is kept in this browser.
+const DEFAULT_FOLDED: readonly Column[] = ["wontDo"];
+const foldListeners = new Set<() => void>();
+let foldFallback: string | null = null;
+
+function readFoldRaw(): string | null {
+	try {
+		return window.localStorage.getItem(FOLD_KEY) ?? foldFallback;
+	} catch {
+		return foldFallback;
+	}
+}
+
+function parseFolded(raw: string | null): readonly Column[] {
+	if (raw === null) return DEFAULT_FOLDED;
+	try {
+		const saved = JSON.parse(raw) as unknown;
+		return Array.isArray(saved) ? saved.filter((item): item is Column => FOLDABLE.includes(item as Column)) : DEFAULT_FOLDED;
+	} catch {
+		return DEFAULT_FOLDED;
+	}
+}
+
+function saveFolded(next: readonly Column[]) {
+	foldFallback = JSON.stringify(next);
+	try {
+		window.localStorage.setItem(FOLD_KEY, foldFallback);
+	} catch {
+		// Storage is off. The fold still holds until reload.
+	}
+	for (const listener of foldListeners) listener();
+}
+
+function subscribeFolded(listener: () => void) {
+	foldListeners.add(listener);
+	return () => foldListeners.delete(listener);
+}
+
+/** The folded columns. The server renders the default; the browser swaps in the saved choice once it has hydrated. */
+function useFolded(): readonly Column[] {
+	const raw = useSyncExternalStore(subscribeFolded, readFoldRaw, () => null);
+	return useMemo(() => parseFolded(raw), [raw]);
+}
+
 function orderOf(board: BoardView): Order {
 	return Object.fromEntries(board.columns.map((column) => [column.id, column.cards.map((card): string => card.id)])) as unknown as Order;
 }
 
 
-export default function Board({ initial, studioUrl }: { initial: BoardView; studioUrl: string | null }) {
+/**
+ * The board as the server last sent it, kept fresh by polling, and the owner's commands to change it.
+ * A drag holds incoming boards back so a card does not jump under the pointer; releasing hands over the latest.
+ */
+function useBoardSync(initial: BoardView, notify: (message: ToastMessage) => void) {
 	const [board, setBoard] = useState(initial);
 	const [order, setOrder] = useState<Order>(() => orderOf(initial));
-	const notify = useCallback((message: ToastMessage) => showToast(message), []);
 	const offline = useRef(0);
+	const dragging = useRef(false);
+	const pending = useRef<BoardView | null>(null);
+
+	const accept = useCallback((next: BoardView) => {
+		if (dragging.current) {
+			pending.current = next;
+			return;
+		}
+		setBoard(next);
+		setOrder(orderOf(next));
+	}, []);
+
+	const refresh = useCallback(async () => {
+		try {
+			const response = await fetch("/api/owner/sync", { method: "POST" });
+			if (response.status === 401) {
+				toLogin();
+				return;
+			}
+			if (!response.ok) throw new Error(String(response.status));
+			accept((await response.json()) as BoardView);
+			if (offline.current >= 2) notify(ONLINE_TOAST);
+			offline.current = 0;
+		} catch {
+			// One miss is usually a blip. Say so on the second, once, and keep retrying.
+			offline.current += 1;
+			if (offline.current === 2) notify(OFFLINE_TOAST);
+		}
+	}, [accept, notify]);
+
+	// Poll so bot edits show up without a reload.
+	useEffect(() => {
+		const timer = window.setInterval(() => {
+			if (document.visibilityState === "visible") void refresh();
+		}, 15000);
+		const onFocus = () => void refresh();
+		window.addEventListener("focus", onFocus);
+		return () => {
+			window.clearInterval(timer);
+			window.removeEventListener("focus", onFocus);
+		};
+	}, [refresh]);
+
+	const send = useCallback(async (command: Command): Promise<boolean> => {
+		try {
+			const response = await fetch("/api/owner/commands", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(command),
+			});
+			if (response.status === 401) {
+				toLogin();
+				return false;
+			}
+			const payload = (await response.json().catch(() => ({}))) as { board?: BoardView; notice?: string | null };
+			if (payload.board) accept(payload.board);
+			else if (!response.ok) await refresh();
+			const message = commandToast(response.status, payload);
+			if (message) notify(message);
+			return response.ok;
+		} catch {
+			notify(UNREACHABLE_TOAST);
+			await refresh();
+			return false;
+		}
+	}, [accept, refresh, notify]);
+
+	const holdUpdates = useCallback(() => {
+		dragging.current = true;
+	}, []);
+	const releaseUpdates = useCallback((): BoardView | null => {
+		dragging.current = false;
+		const queued = pending.current;
+		pending.current = null;
+		return queued;
+	}, []);
+
+	return { board, setBoard, order, setOrder, send, holdUpdates, releaseUpdates };
+}
+
+export default function Board({ initial, studioUrl }: { initial: BoardView; studioUrl: string | null }) {
+	const notify = useCallback((message: ToastMessage) => showToast(message), []);
+	const { board, setBoard, order, setOrder, send, holdUpdates, releaseUpdates } = useBoardSync(initial, notify);
 	// A click on a card reads it in the side drawer; New card and Edit open the large dialog to write in.
 	// The last target stays set after closing, so the drawer can animate out with its content.
 	const [drawer, setDrawer] = useState<DrawerTarget | null>(null);
@@ -105,22 +239,19 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 	const [query, setQuery] = useState("");
 	const [memberFilter, setMemberFilter] = useState<string | null>(null);
 	const [highlight, setHighlight] = useState<string | null>(null);
-	// Won't Do starts folded so the working columns fit a laptop screen.
-	const [folded, setFolded] = useState<Column[]>(["wontDo"]);
+	const folded = useFolded();
 	const [quickAdd, setQuickAdd] = useState(false);
 	const [overMember, setOverMember] = useState(false);
-	const dragging = useRef(false);
-	const pending = useRef<BoardView | null>(null);
 	const dragOrigin = useRef<Column | null>(null);
-	const droppedAt = useRef(0);
+	const justDropped = useRef(false);
 	const lastOver = useRef<UniqueIdentifier | null>(null);
 	const orderRef = useRef(order);
-	orderRef.current = order;
 	const justMoved = useRef(false);
 
 	// Moving a card into another column resizes both, which can flip the nearest target back and forth.
 	// Hold the last target for one frame after a move so the drag settles.
 	useEffect(() => {
+		orderRef.current = order;
 		const frame = window.requestAnimationFrame(() => {
 			justMoved.current = false;
 		});
@@ -151,76 +282,27 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 	const members = useMemo<MemberView[]>(() => [owner, ...board.bots], [owner, board.bots]);
 	const activeCard = activeId ? cards.get(activeId) ?? null : null;
 
-	const accept = useCallback((next: BoardView) => {
-		if (dragging.current) {
-			pending.current = next;
-			return;
-		}
-		setBoard(next);
-		setOrder(orderOf(next));
-	}, []);
 
-	useEffect(() => {
-		try {
-			const raw = window.localStorage.getItem(FOLD_KEY);
-			if (raw === null) return;
-			const saved = JSON.parse(raw) as unknown;
-			if (Array.isArray(saved)) setFolded(saved.filter((item): item is Column => FOLDABLE.includes(item as Column)));
-		} catch {
-			// No saved layout. Every column starts open.
-		}
-	}, []);
-
-	const toggleFold = (column: Column) =>
-		setFolded((current) => {
-			const next = current.includes(column) ? current.filter((item) => item !== column) : [...current, column];
-			try {
-				window.localStorage.setItem(FOLD_KEY, JSON.stringify(next));
-			} catch {
-				// Storage is off. The fold still holds until reload.
-			}
-			return next;
-		});
+	const toggleFold = (column: Column) => saveFolded(folded.includes(column) ? folded.filter((item) => item !== column) : [...folded, column]);
 
 
-	const refresh = useCallback(async () => {
-		try {
-			const response = await fetch("/api/owner/sync", { method: "POST" });
-			if (response.status === 401) {
-				window.location.href = "/login";
-				return;
-			}
-			if (!response.ok) throw new Error(String(response.status));
-			accept((await response.json()) as BoardView);
-			if (offline.current >= 2) notify(ONLINE_TOAST);
-			offline.current = 0;
-		} catch {
-			// One miss is usually a blip. Say so on the second, once, and keep retrying.
-			offline.current += 1;
-			if (offline.current === 2) notify(OFFLINE_TOAST);
-		}
-	}, [accept, notify]);
-
-	// Poll so bot edits show up without a reload.
-	useEffect(() => {
-		const timer = window.setInterval(() => {
-			if (document.visibilityState === "visible") void refresh();
-		}, 15000);
-		const onFocus = () => void refresh();
-		window.addEventListener("focus", onFocus);
-		return () => {
-			window.clearInterval(timer);
-			window.removeEventListener("focus", onFocus);
-		};
-	}, [refresh]);
 
 	useEffect(() => {
 		const id = new URLSearchParams(window.location.search).get("card");
 		if (!id) return;
-		setHighlight(id);
-		window.requestAnimationFrame(() => document.querySelector(`[data-card-id="${window.CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }));
+		window.requestAnimationFrame(() => {
+			setHighlight(id);
+			document.querySelector(`[data-card-id="${window.CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+		});
 		const timer = window.setTimeout(() => setHighlight(null), 4000);
 		return () => window.clearTimeout(timer);
+	}, []);
+
+	const openDrawer = useCallback((target: DrawerTarget) => {
+		setDrawer(target);
+		setDrawerOpen(true);
+		// Each opening starts fresh, even for the card that was just closed.
+		setDrawerSerial((serial) => serial + 1);
 	}, []);
 
 	useEffect(() => {
@@ -244,44 +326,15 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, []);
+	}, [openDrawer]);
 
-	const openDrawer = useCallback((target: DrawerTarget) => {
-		setDrawer(target);
-		setDrawerOpen(true);
-		// Each opening starts fresh, even for the card that was just closed.
-		setDrawerSerial((serial) => serial + 1);
-	}, []);
 	const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
-	async function send(command: Command): Promise<boolean> {
-		try {
-			const response = await fetch("/api/owner/commands", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(command),
-			});
-			if (response.status === 401) {
-				window.location.href = "/login";
-				return false;
-			}
-			const payload = (await response.json().catch(() => ({}))) as { board?: BoardView; notice?: string | null };
-			if (payload.board) accept(payload.board);
-			else if (!response.ok) await refresh();
-			const message = commandToast(response.status, payload);
-			if (message) notify(message);
-			return response.ok;
-		} catch {
-			notify(UNREACHABLE_TOAST);
-			await refresh();
-			return false;
-		}
-	}
 
 	const handlersFor = (card: CardView): CardHandlers => ({
 		onOpen: () => {
 			// The click that ends a drag is not a request to open the card.
-			if (Date.now() - droppedAt.current > 250) openDrawer({ mode: "edit", cardId: card.id, dialog: false });
+			if (!justDropped.current) openDrawer({ mode: "edit", cardId: card.id, dialog: false });
 		},
 		onEdit: () => openDrawer({ mode: "edit", cardId: card.id, dialog: true }),
 		onDelete: () => askDelete(card),
@@ -332,7 +385,7 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 	};
 
 	function onDragStart(event: DragStartEvent) {
-		dragging.current = true;
+		holdUpdates();
 		lastOver.current = null;
 		const id = String(event.active.id);
 		setActiveId(id);
@@ -361,13 +414,13 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 	}
 
 	function finishDrag() {
-		dragging.current = false;
-		droppedAt.current = Date.now();
+		justDropped.current = true;
+		window.setTimeout(() => {
+			justDropped.current = false;
+		}, 250);
 		setOverMember(false);
 		setActiveId(null);
-		const queued = pending.current;
-		pending.current = null;
-		return queued;
+		return releaseUpdates();
 	}
 
 	function onDragCancel() {
@@ -425,12 +478,10 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 	const shown = board.columns.reduce((sum, column) => sum + column.cards.filter(visible).length, 0);
 
 	// The drawer for a card that was deleted elsewhere closes instead of turning into a blank new card.
+	const lost = drawerOpen && drawer?.mode === "edit" && !cards.has(drawer.cardId);
 	useEffect(() => {
-		if (drawerOpen && drawer?.mode === "edit" && !cards.has(drawer.cardId)) {
-			setDrawerOpen(false);
-			notify({ text: "That card was deleted.", tone: "info" });
-		}
-	}, [cards, drawer, drawerOpen, notify]);
+		if (lost) notify({ text: "That card was deleted.", tone: "info" });
+	}, [lost, notify]);
 
 	return (
 		<DndContext id="board" sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={onDragCancel}>
@@ -608,7 +659,7 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 				{drawer ? (
 					<CardDrawer
 						key={drawerSerial}
-						open={drawerOpen}
+						open={drawerOpen && !lost}
 						card={editing}
 						dialog={dialog}
 						cursorEnabled={board.cursor.enabled}
