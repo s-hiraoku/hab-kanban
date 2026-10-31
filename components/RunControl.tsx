@@ -172,7 +172,7 @@ export function RunControl({
 	return (
 		<span data-no-dnd>
 			{picker(
-				<button type="button" className={cn(pill, TEAL)} disabled={busy} aria-label={`${verb} with a Grok Bot or Cursor`} title={`${verb} with a Grok Bot or Cursor`}>
+				<button type="button" className={cn(pill, TEAL)} disabled={busy} aria-label={`${verb} with a Bot or Cursor`} title={`${verb} with a Bot or Cursor`}>
 					{play}
 					{verb}
 					<ChevronDownIcon />

@@ -11,12 +11,9 @@ import type { Command } from "@/components/Board";
 import { ConfirmDialog, type ConfirmRequest } from "@/components/ConfirmDialog";
 import { RunControl } from "@/components/RunControl";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -71,11 +68,9 @@ export default function CardDrawer({
 	const [originalLink, setOriginalLink] = useState(card?.originalLink ?? "");
 	const [notes, setNotes] = useState(card?.notes ?? "");
 	const [priority, setPriority] = useState(card?.priority ?? "normal");
-	const [kind, setKind] = useState<string>(card?.kind.type ?? "text");
-	const [seconds, setSeconds] = useState(card?.kind.type === "voice" ? String(card.kind.seconds) : "6");
+	const [habTask, setHabTask] = useState(card?.habTask ?? "");
+	const [habMessage, setHabMessage] = useState(card?.habMessage ?? "");
 	const [assignees, setAssignees] = useState<string[]>(card?.assignees.map((member) => member.id) ?? []);
-	const [screened, setScreened] = useState(card?.screened ?? false);
-	const [reviewer, setReviewer] = useState(card?.reviewer === "grok" ? "grok" : "owner");
 	// Existing text opens as reading copy; a new card, or a card with nothing written yet, opens for typing.
 	const [editingBody, setEditingBody] = useState(dialog || !card?.body);
 	const [editingNotes, setEditingNotes] = useState(false);
@@ -94,9 +89,9 @@ export default function CardDrawer({
 		originalLink: originalLink.trim() || null,
 		priority,
 		repo: repo.trim() ? { url: repo.trim(), startingRef: ref.trim() || "main" } : null,
-		kind: kind === "voice" ? { type: "voice", seconds: Math.max(1, Math.round(Number(seconds) || 1)) } : { type: "text" },
+		habTask: habTask.trim() || null,
+		habMessage: habMessage.trim() || null,
 		assignees,
-		screening: screened ? { by: reviewer } : null,
 	});
 
 	const changes = () => {
@@ -110,9 +105,9 @@ export default function CardDrawer({
 		if (next.originalLink !== card.originalLink) patch.originalLink = next.originalLink;
 		if (next.priority !== card.priority) patch.priority = next.priority;
 		if (JSON.stringify(next.repo) !== JSON.stringify(card.repo)) patch.repo = next.repo;
-		if (JSON.stringify(next.kind) !== JSON.stringify(card.kind)) patch.kind = next.kind;
+		if (next.habTask !== card.habTask) patch.habTask = next.habTask;
+		if (next.habMessage !== card.habMessage) patch.habMessage = next.habMessage;
 		if (next.assignees.join() !== card.assignees.map((member) => member.id).join()) patch.assignees = next.assignees;
-		if (screened !== card.screened || (screened && reviewer !== (card.reviewer === "grok" ? "grok" : "owner"))) patch.screening = next.screening;
 		return patch;
 	};
 	const dirty = card ? Object.keys(changes()).length > 0 : title.trim().length > 0 || body.trim().length > 0;
@@ -430,40 +425,12 @@ export default function CardDrawer({
 												<Field label="Original post" className={cn(!wide && "sm:col-span-2")}>
 													<Input value={originalLink} onChange={(event) => setOriginalLink(event.target.value)} placeholder="https://" inputMode="url" />
 												</Field>
-												<div className="grid gap-1.5">
-													<FieldLabel id="kind-label">Kind</FieldLabel>
-													<Select value={kind} onValueChange={setKind}>
-														<SelectTrigger aria-labelledby="kind-label" className="w-full">
-															<SelectValue />
-														</SelectTrigger>
-														<SelectContent>
-															<SelectItem value="text">Text</SelectItem>
-															<SelectItem value="voice">Voice</SelectItem>
-														</SelectContent>
-													</Select>
-												</div>
-												{kind === "voice" ? (
-													<Field label="Seconds">
-														<Input value={seconds} onChange={(event) => setSeconds(event.target.value)} inputMode="numeric" />
-													</Field>
-												) : null}
-											</div>
-											<div className="flex flex-wrap items-center gap-2.5 text-[13px]">
-												<Label className="cursor-pointer gap-2 text-[13px] font-normal">
-													<Checkbox checked={screened} onCheckedChange={(value) => setScreened(value === true)} />
-													Screened for moderation
-												</Label>
-												{screened ? (
-													<Select value={reviewer} onValueChange={setReviewer}>
-														<SelectTrigger size="sm" aria-label="Screened by">
-															<SelectValue />
-														</SelectTrigger>
-														<SelectContent>
-															<SelectItem value="owner">by you</SelectItem>
-															<SelectItem value="grok">by Grok</SelectItem>
-														</SelectContent>
-													</Select>
-												) : null}
+												<Field label="HAB Task">
+													<Input value={habTask} onChange={(event) => setHabTask(event.target.value)} placeholder="Task id" spellCheck={false} />
+												</Field>
+												<Field label="HAB Relay message">
+													<Input value={habMessage} onChange={(event) => setHabMessage(event.target.value)} placeholder="Message id" spellCheck={false} />
+												</Field>
 											</div>
 										</div>
 									</CollapsibleContent>

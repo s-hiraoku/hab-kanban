@@ -19,7 +19,7 @@ const sample = {
 	body: "キャラクターの返答が途中で止まる",
 	source: "x",
 	originalLink: "https://x.com/i/status/1849",
-	kind: { type: "voice", seconds: 6 },
+	habTask: "task-0192",
 	repo: { url: "https://github.com/s-hiraoku/grokbot", startingRef: "main" },
 };
 
@@ -38,12 +38,12 @@ test("bot API rejects a missing or wrong token", async () => {
 });
 
 test("bot API files and edits cards, and the owner sees them on refresh", async () => {
-	const created = await createCard(botRequest("POST", "/api/bot/cards", { ...sample, externalId: "voice-1" }));
+	const created = await createCard(botRequest("POST", "/api/bot/cards", { ...sample, externalId: "post-1" }));
 	expect(created.status).toBe(201);
 	const payload = (await created.json()) as { card: { id: string; column: string; title: string } };
-	expect(payload.card).toMatchObject({ column: "inbox", title: "音声が6秒で途切れる" });
+	expect(payload.card).toMatchObject({ column: "inbox", title: "音声が6秒で途切れる", habTask: "task-0192", habMessage: null });
 
-	const again = await createCard(botRequest("POST", "/api/bot/cards", { ...sample, externalId: "voice-1" }));
+	const again = await createCard(botRequest("POST", "/api/bot/cards", { ...sample, externalId: "post-1" }));
 	expect(((await again.json()) as { card: { id: string } }).card.id).toBe(payload.card.id);
 
 	const unknown = await patchCard(botRequest("PATCH", `/api/bot/cards/${payload.card.id}`, { column: "todo", launch: true }), {
@@ -59,6 +59,11 @@ test("bot API files and edits cards, and the owner sees them on refresh", async 
 	const read = await getCard(botRequest("GET", `/api/bot/cards/${payload.card.id}`), { params: Promise.resolve({ id: payload.card.id }) });
 	expect(await read.json()).toMatchObject({ card: { column: "inbox", notes: "モデレーション済み" } });
 
+	const spaced = await patchCard(botRequest("PATCH", `/api/bot/cards/${payload.card.id}`, { habMessage: "two words" }), {
+		params: Promise.resolve({ id: payload.card.id }),
+	});
+	expect(spaced.status).toBe(400);
+
 	const board = (await (await sync(syncRequest(holder.current!))).json()) as Parameters<typeof cardIn>[0];
 	expect(cardIn(board, payload.card.id)).toMatchObject({ column: "inbox", card: { notes: "モデレーション済み", repoLabel: "s-hiraoku/grokbot" } });
 });
@@ -68,7 +73,7 @@ test("Run needs a bot on the card, and Stop without a run does nothing", async (
 	const { card } = (await created.json()) as { card: { id: string } };
 	const run = await command(ownerRequest(holder.current!, { type: "run", cardId: card.id }));
 	expect(run.status).toBe(400);
-	expect(((await run.json()) as { notice: string }).notice).toBe("Assign a Grok Bot to this card first, then run it.");
+	expect(((await run.json()) as { notice: string }).notice).toBe("Assign a Bot to this card first, then run it.");
 	const stop = await command(ownerRequest(holder.current!, { type: "stop", cardId: card.id }));
 	expect(stop.status).toBe(200);
 });

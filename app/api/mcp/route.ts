@@ -9,7 +9,7 @@ export const maxDuration = 60;
 
 export async function POST(req: Request): Promise<Response> {
 	const config = env();
-	const bot = requireBot(req, config);
+	const bot = await requireBot(req, config);
 	if (bot instanceof Response) return bot;
 	let payload: unknown;
 	try {
@@ -35,8 +35,8 @@ export async function DELETE(req: Request): Promise<Response> {
 	return notAllowed(req);
 }
 
-function notAllowed(req: Request): Response {
-	const bot = requireBot(req, env());
+async function notAllowed(req: Request): Promise<Response> {
+	const bot = await requireBot(req, env());
 	if (bot instanceof Response) return bot;
 	return new Response(null, { status: 405, headers: { Allow: "POST" } });
 }

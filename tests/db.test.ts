@@ -29,8 +29,8 @@ test("two inserts racing on one externalId leave a single card", async () => {
 		source: null,
 		originalLink: null,
 		priority: "normal",
-		kind: { type: "text" },
-		screening: null,
+		habTask: null,
+		habMessage: null,
 		assignees: [],
 	};
 	const row = { externalId: "ext-1", content, rank: "0000000000001000", now: 1 as Instant, createdBy: null };

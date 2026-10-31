@@ -206,7 +206,7 @@ test("a failed run goes back to Todo, and a card moved by hand while Cursor work
 	expect((after.card as any).notes).toContain("Finished without a pull request");
 });
 
-test("a Grok Bot running a card hands it to Cursor with its findings, which ends the Bot's run", async () => {
+test("a Bot running a card hands it to Cursor with its findings, which ends the Bot's run", async () => {
 	const id = await cardWithRepo("Implement the export button");
 	await send({ type: "run", cardId: id, bot: "scout" });
 	await call("start_run", { bot: "Scout", card: id });

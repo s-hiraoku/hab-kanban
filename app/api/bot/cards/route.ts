@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request): Promise<Response> {
 	const config = env();
-	const bot = requireBot(req, config);
+	const bot = await requireBot(req, config);
 	if (bot instanceof Response) return bot;
 	try {
 		const raw = parseBody(newCardBodySchema, await readJson(req));

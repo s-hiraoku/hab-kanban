@@ -1,4 +1,4 @@
-import type { BotProfile } from "./bots";
+import { agentOf, type BotProfile, type Connection } from "./bots";
 import { COLUMNS, OWNER_MEMBER, agentHref, columnOf, prHref, type Card, type CardId, type Column, type MemberId } from "./domain";
 
 export type BoardView = {
@@ -7,6 +7,18 @@ export type BoardView = {
 	owner: { avatar: string };
 	/** Whether Run can hand cards to a Cursor cloud agent (CURSOR_API_KEY is set). */
 	cursor: { enabled: boolean };
+	/** The agents' tokens, by name and the Bots each may act as. The tokens themselves are never shown again. */
+	connections: readonly ConnectionView[];
+	/** Whether the shared BOT_TOKEN still works alongside the connections' tokens. */
+	sharedToken: boolean;
+};
+
+export type ConnectionView = {
+	id: string;
+	name: string;
+	members: readonly MemberId[];
+	createdAt: string;
+	lastUsed: string | null;
 };
 
 export type MemberView = {
@@ -24,6 +36,9 @@ export type BotView = MemberView & {
 	assigned: number;
 	created: number;
 	lastSeen: string | null;
+	/** Its HAB address, and the agent part of it (hermes for lab@hermes.hab). */
+	address: string | null;
+	agent: string | null;
 };
 
 export type ColumnView = {
@@ -45,20 +60,17 @@ export type CardView = {
 	title: string;
 	body: string;
 	notes: string;
-	kindLabel: string;
 	priority: string;
 	source: string | null;
 	repoLabel: string | null;
-	screening: string | null;
-	screened: boolean;
-	reviewer: string | null;
+	habTask: string | null;
+	habMessage: string | null;
 	createdBy: MemberView | null;
 	assignees: readonly MemberView[];
 	repo: { url: string; startingRef: string } | null;
 	originalLink: string | null;
-	kind: { type: "text" } | { type: "voice"; seconds: number };
 	links: { character: string | null; agent: string | null; pr: string | null };
-	/** The Grok Bot run this card waits on: requested until the bot picks it up, then working. */
+	/** The Bot run this card waits on: requested until the bot picks it up, then working. */
 	run: { bot: MemberView; status: "requested" | "working"; since: string; passedOn: { by: MemberView; since: string } | null } | null;
 	/** The Cursor agent working on the card: launching until Cursor confirms it, then running. */
 	cursor: { status: "launching" | "running"; agentUrl: string | null; by: MemberView; since: string } | null;
@@ -76,8 +88,8 @@ export type BotCardView = {
 	source: string | null;
 	originalLink: string | null;
 	priority: string;
-	kind: { type: "text" } | { type: "voice"; seconds: number };
-	screening: { by: string | null } | null;
+	habTask: string | null;
+	habMessage: string | null;
 	assignees: { id: MemberId; name: string }[];
 	createdBy: { id: MemberId; name: string } | null;
 	agentUrl: string | null;
@@ -86,7 +98,12 @@ export type BotCardView = {
 	cursor: { status: "launching" | "running"; agentUrl: string | null; by: string; startedAt: string } | null;
 };
 
-export function toBoardView(cards: readonly Card[], bots: readonly BotProfile[], now: number, options: { cursorEnabled: boolean } = { cursorEnabled: false }): BoardView {
+export function toBoardView(
+	cards: readonly Card[],
+	bots: readonly BotProfile[],
+	now: number,
+	options: { cursorEnabled: boolean; connections?: readonly Connection[]; sharedToken?: boolean } = { cursorEnabled: false },
+): BoardView {
 	const columns = COLUMNS.map((column) => {
 		const inColumn = cards
 			.filter((card) => columnOf(card.state) === column.id)
@@ -104,6 +121,14 @@ export function toBoardView(cards: readonly Card[], bots: readonly BotProfile[],
 		bots: bots.filter((bot) => bot.id !== OWNER_MEMBER).map((bot) => toBotView(bot, cards, now)),
 		owner: { avatar: ownerAvatarUrl(bots) },
 		cursor: { enabled: options.cursorEnabled },
+		connections: (options.connections ?? []).map((connection) => ({
+			id: connection.id,
+			name: connection.name,
+			members: connection.members.filter((id) => bots.some((bot) => bot.id === id)),
+			createdAt: new Date(connection.createdAt).toISOString(),
+			lastUsed: connection.lastUsedAt === null ? null : ageLabel(connection.lastUsedAt, now),
+		})),
+		sharedToken: options.sharedToken ?? false,
 	};
 }
 
@@ -115,6 +140,8 @@ export function toBotView(bot: BotProfile, cards: readonly Card[], now: number):
 		assigned: cards.filter((card) => card.content.assignees.includes(bot.id)).length,
 		created: cards.filter((card) => card.createdBy === bot.id).length,
 		lastSeen: bot.lastSeenAt === null ? null : ageLabel(bot.lastSeenAt, now),
+		address: bot.address,
+		agent: bot.address ? agentOf(bot.address) : null,
 	};
 }
 
@@ -155,7 +182,6 @@ export function initialsOf(name: string): string {
 
 export function toCardView(card: Card, bots: readonly BotProfile[], now: number): CardView {
 	const column = columnOf(card.state);
-	const screening = screeningLabel(card.content.screening);
 	return {
 		id: card.id,
 		shortId: card.id.replaceAll("-", "").slice(0, 6),
@@ -165,18 +191,15 @@ export function toCardView(card: Card, bots: readonly BotProfile[], now: number)
 		title: card.content.title,
 		body: card.content.body,
 		notes: card.content.notes,
-		kindLabel: card.content.kind.type === "text" ? "text" : `voice ${card.content.kind.seconds}s`,
 		priority: card.content.priority,
 		source: card.content.source,
 		repoLabel: repoLabel(card.content.repo?.url ?? null),
-		screening,
-		screened: card.content.screening !== null,
-		reviewer: card.content.screening?.by ?? null,
+		habTask: card.content.habTask,
+		habMessage: card.content.habMessage,
 		createdBy: card.createdBy ? memberOf(card.createdBy, bots) : null,
 		assignees: card.content.assignees.map((id) => memberOf(id, bots)),
 		repo: card.content.repo ? { url: card.content.repo.url, startingRef: card.content.repo.startingRef } : null,
 		originalLink: card.content.originalLink,
-		kind: card.content.kind,
 		links: {
 			character: card.content.originalLink,
 			agent: agentHref(card.state),
@@ -216,8 +239,8 @@ export function toBotCard(card: Card, bots: readonly BotProfile[]): BotCardView 
 		source: card.content.source,
 		originalLink: card.content.originalLink,
 		priority: card.content.priority,
-		kind: card.content.kind,
-		screening: card.content.screening,
+		habTask: card.content.habTask,
+		habMessage: card.content.habMessage,
 		assignees: card.content.assignees.map((id) => ({ id, name: memberOf(id, bots).name })),
 		createdBy: card.createdBy ? { id: card.createdBy, name: memberOf(card.createdBy, bots).name } : null,
 		agentUrl: agentHref(card.state),
@@ -241,13 +264,6 @@ export function toBotCard(card: Card, bots: readonly BotProfile[]): BotCardView 
 				}
 			: null,
 	};
-}
-
-function screeningLabel(screening: { by: string | null } | null): string | null {
-	if (!screening) return null;
-	if (screening.by === "grok") return "screened · grok";
-	if (screening.by) return `screened · ${screening.by}`;
-	return "screened";
 }
 
 function repoLabel(url: string | null): string | null {

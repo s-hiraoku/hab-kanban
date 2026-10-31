@@ -11,8 +11,8 @@ export const cards = sqliteTable("cards", {
 	source: text("source"),
 	originalLink: text("original_link"),
 	priority: text("priority").notNull(),
-	kind: text("kind", { mode: "json" }).notNull(),
-	screening: text("screening", { mode: "json" }),
+	habTask: text("hab_task"),
+	habMessage: text("hab_message"),
 	assignees: text("assignees", { mode: "json" }).notNull(),
 	createdBy: text("created_by"),
 	rank: text("rank").notNull(),
@@ -28,6 +28,16 @@ export const bots = sqliteTable("bots", {
 	color: text("color").notNull(),
 	createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 	lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
+	address: text("address"),
+});
+
+export const connections = sqliteTable("connections", {
+	id: text("id").primaryKey(),
+	name: text("name").notNull(),
+	tokenHash: text("token_hash").notNull(),
+	members: text("members", { mode: "json" }).notNull(),
+	createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+	lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
 });
 
 export const users = sqliteTable("users", {

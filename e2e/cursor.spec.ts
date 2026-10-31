@@ -48,17 +48,17 @@ test("Cursor needs the card's repo, and Cursor's refusal comes back as a message
 	await tool(request, "create_card", { bot: "Scout", title: blocked, repo: { url: "https://github.com/someone/no-access", startingRef: "main" } });
 	await signIn(page);
 
-	await cardTitled(page, bare).getByRole("button", { name: /Run with a Grok Bot or Cursor/ }).click();
+	await cardTitled(page, bare).getByRole("button", { name: /Run with a Bot or Cursor/ }).click();
 	await expect(runPicker(page).getByRole("option", { name: /Cursor agent/ })).toBeDisabled();
 	await expect(runPicker(page)).toContainText("Set the card's repo under More fields first.");
 	await page.keyboard.press("Escape");
 
 	const before = (await launches(request)).length;
-	await cardTitled(page, blocked).getByRole("button", { name: /Run with a Grok Bot or Cursor/ }).click();
+	await cardTitled(page, blocked).getByRole("button", { name: /Run with a Bot or Cursor/ }).click();
 	await runPicker(page).getByRole("option", { name: /Cursor agent/ }).click();
 	await expect(page.getByText("Repository not accessible (repo_access)")).toBeVisible();
 	await expect(columnOf(page, blocked)).toHaveAttribute("aria-label", "Inbox");
-	await expect(cardTitled(page, blocked).getByRole("button", { name: /Run with a Grok Bot or Cursor/ })).toBeVisible();
+	await expect(cardTitled(page, blocked).getByRole("button", { name: /Run with a Bot or Cursor/ })).toBeVisible();
 	expect((await launches(request)).length).toBe(before);
 });
 
@@ -66,7 +66,7 @@ test("the Cursor badge cancels the agent and the card goes back to Todo", async 
 	const title = `cancel cursor ${unique()}`;
 	await tool(request, "create_card", { bot: "Scout", title, repo: REPO });
 	await signIn(page);
-	await cardTitled(page, title).getByRole("button", { name: /Run with a Grok Bot or Cursor/ }).click();
+	await cardTitled(page, title).getByRole("button", { name: /Run with a Bot or Cursor/ }).click();
 	await runPicker(page).getByRole("option", { name: /Cursor agent/ }).click();
 	await expect(runStatus(page, title)).toHaveText("Cursor working");
 
@@ -79,7 +79,7 @@ test("the Cursor badge cancels the agent and the card goes back to Todo", async 
 	expect((await launches(request)).at(-1)!.status).toBe("CANCELLED");
 });
 
-test("a Grok Bot's hand-off to Cursor shows on the board with who sent it", async ({ page, request }) => {
+test("a Bot's hand-off to Cursor shows on the board with who sent it", async ({ page, request }) => {
 	const title = `bot handoff ${unique()}`;
 	const created = await tool(request, "create_card", { bot: "Scout", title, repo: REPO });
 	const handed = await tool(request, "hand_off_to_cursor", { bot: "Scout", card: created.card.id, instructions: "Look at lib/auth.ts first." });

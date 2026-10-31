@@ -24,7 +24,7 @@ test("Run's list of Bots searches by name and role, and Enter runs the best matc
 	await tool(request, "create_card", { bot: "Atlas", title });
 	await signIn(page);
 
-	await cardTitled(page, title).getByRole("button", { name: /Run with a Grok Bot/ }).click();
+	await cardTitled(page, title).getByRole("button", { name: /Run with a Bot/ }).click();
 	const picker = runPicker(page);
 	await expectFullyVisible(picker);
 	const search = picker.getByRole("combobox", { name: "Search bots" });
@@ -54,7 +54,7 @@ test("a search that fits no Bot says so, and Enter does not hand the card to Cur
 	await signIn(page);
 	const before = ((await (await request.get(`${FAKE_CURSOR}/__agents`)).json()) as unknown[]).length;
 
-	await cardTitled(page, title).getByRole("button", { name: /Run with a Grok Bot/ }).click();
+	await cardTitled(page, title).getByRole("button", { name: /Run with a Bot/ }).click();
 	const picker = runPicker(page);
 	await expect(picker.getByRole("option", { name: /Cursor agent/ })).toBeVisible();
 	await picker.getByRole("combobox", { name: "Search bots" }).fill("zzz");
@@ -69,7 +69,7 @@ test("a search that fits no Bot says so, and Enter does not hand the card to Cur
 	await expect(picker.getByRole("option")).toHaveText([/Cursor agent/]);
 	// Closing forgets the search.
 	await page.keyboard.press("Escape");
-	await cardTitled(page, title).getByRole("button", { name: /Run with a Grok Bot/ }).click();
+	await cardTitled(page, title).getByRole("button", { name: /Run with a Bot/ }).click();
 	await expect(picker.getByRole("combobox", { name: "Search bots" })).toHaveValue("");
 	expect(await picker.getByRole("option").count()).toBeGreaterThan(Object.keys(ROSTER).length);
 });
@@ -116,7 +116,7 @@ test.describe("on a phone", () => {
 
 		const card = cardTitled(page, title);
 		await card.scrollIntoViewIfNeeded();
-		await card.getByRole("button", { name: /Run with a Grok Bot/ }).tap();
+		await card.getByRole("button", { name: /Run with a Bot/ }).tap();
 		const picker = runPicker(page);
 		await expectFullyVisible(picker);
 		const search = picker.getByRole("combobox", { name: "Search bots" });

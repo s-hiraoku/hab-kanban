@@ -88,9 +88,9 @@ const CardPanel = forwardRef<HTMLElement, Props>(function CardPanel(
 				{card.priority === "high" ? <Tag className="bg-danger-soft font-bold text-danger-text">High</Tag> : null}
 				{card.priority === "low" ? <Tag className={cn("border bg-transparent text-muted-foreground", faded)}>Low</Tag> : null}
 				{card.repoLabel ? <Tag className={faded}>{card.repoLabel}</Tag> : null}
-				{card.kind.type === "voice" ? <Tag className={faded}>Voice {card.kind.seconds}s</Tag> : null}
 				{card.source ? <Tag className={faded}>{card.source}</Tag> : null}
-				{card.screened ? <Tag className={cn("bg-ok-soft text-ok-text", faded)}>Screened</Tag> : null}
+				{card.habTask ? <Tag className={faded} title={`HAB Task ${card.habTask}`}>Task {shortRef(card.habTask)}</Tag> : null}
+				{card.habMessage ? <Tag className={faded} title={`HAB Relay message ${card.habMessage}`}>Relay {shortRef(card.habMessage)}</Tag> : null}
 			</div>
 			<footer className={cn("mt-3 flex min-h-6 items-center gap-2 border-t border-line/50 pt-2.5", faded)}>
 				<span className="mr-auto inline-flex min-w-0 items-center gap-1.5 overflow-hidden text-xs text-muted-foreground" title={card.createdBy ? `Filed by ${card.createdBy.name}` : "Filed over the API"}>
@@ -116,8 +116,8 @@ const CardPanel = forwardRef<HTMLElement, Props>(function CardPanel(
 
 export default CardPanel;
 
-function Tag({ className, children }: { className?: string; children: React.ReactNode }) {
-	return <span className={cn("max-w-full truncate rounded-md bg-secondary px-2 py-0.5 text-xs leading-4 text-soft-text", className)}>{children}</span>;
+function Tag({ className, title, children }: { className?: string; title?: string; children: React.ReactNode }) {
+	return <span title={title} className={cn("max-w-full truncate rounded-md bg-secondary px-2 py-0.5 text-xs leading-4 text-soft-text", className)}>{children}</span>;
 }
 
 function CardMenu({ card, handlers }: { card: CardView; handlers: CardHandlers }) {
@@ -146,4 +146,9 @@ function CardMenu({ card, handlers }: { card: CardView; handlers: CardHandlers }
 			</Menu>
 		</span>
 	);
+}
+
+/** HAB ids are long; the card shows their last characters and the full id on hover. */
+function shortRef(id: string): string {
+	return id.length > 10 ? `…${id.slice(-8)}` : id;
 }

@@ -1,26 +1,37 @@
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { BotProfile, BotProfilePatch } from "./bots";
+import type { BotProfile, BotProfilePatch, Connection } from "./bots";
 import type { BotRun, Card, CardContent, CardId, CardState, Column, ContentPatch, CursorRun, HttpsUrl, Instant, MemberId, PastRun } from "./domain";
 import { isUniqueViolation } from "./db";
-import { bots, cards } from "./schema";
+import { bots, cards, connections } from "./schema";
 
 type QueryDb = {
 	select: () => {
-		from: <R = Row>(table: typeof cards | typeof bots) => Promise<R[]> & { where: (condition: unknown) => Promise<R[]> };
+		from: <R = Row>(table: Table) => Promise<R[]> & { where: (condition: unknown) => Promise<R[]> };
 	};
-	insert: (table: typeof cards | typeof bots) => {
+	insert: (table: Table) => {
 		values: (value: Record<string, unknown>) => {
 			returning: <R = Row>() => Promise<R[]>;
 			onConflictDoNothing: () => { returning: <R = Row>() => Promise<R[]> };
 		};
 	};
-	update: (table: typeof cards | typeof bots) => {
+	update: (table: Table) => {
 		set: (value: Record<string, unknown>) => {
 			where: (condition: unknown) => { returning: <R = Row>() => Promise<R[]> };
 		};
 	};
-	delete: (table: typeof cards | typeof bots) => { where: (condition: unknown) => { returning: <R = Row>() => Promise<R[]> } };
+	delete: (table: Table) => { where: (condition: unknown) => { returning: <R = Row>() => Promise<R[]> } };
+};
+
+type Table = typeof cards | typeof bots | typeof connections;
+
+type ConnectionRow = {
+	id: string;
+	name: string;
+	tokenHash: string;
+	members: unknown;
+	createdAt: Date;
+	lastUsedAt: Date | null;
 };
 
 type BotRow = {
@@ -31,6 +42,7 @@ type BotRow = {
 	color: string;
 	createdAt: Date;
 	lastSeenAt: Date | null;
+	address: string | null;
 };
 
 type Row = {
@@ -44,8 +56,8 @@ type Row = {
 	source: string | null;
 	originalLink: string | null;
 	priority: string;
-	kind: unknown;
-	screening: unknown;
+	habTask: string | null;
+	habMessage: string | null;
 	assignees: unknown;
 	createdBy: string | null;
 	rank: string;
@@ -78,6 +90,12 @@ export type Store = {
 	updateBot(id: string, patch: BotProfilePatch & { lastSeenAt?: Instant }): Promise<BotProfile | null>;
 	deleteBot(id: string): Promise<boolean>;
 	deleteCard(id: CardId): Promise<boolean>;
+	connections(): Promise<Connection[]>;
+	/** The connection whose token hashes to this, if it still exists. */
+	connectionByToken(tokenHash: string): Promise<Connection | null>;
+	insertConnection(row: Connection & { tokenHash: string }): Promise<Connection>;
+	updateConnection(id: string, patch: { name?: string; members?: readonly string[]; lastUsedAt?: Instant }): Promise<Connection | null>;
+	deleteConnection(id: string): Promise<boolean>;
 };
 
 const columnSchema = z.enum(["inbox", "todo", "inProgress", "inReview", "done", "wontDo"]);
@@ -149,11 +167,8 @@ const contentSchema = z.object({
 	source: z.string().nullable(),
 	originalLink: z.string().nullable(),
 	priority: z.enum(["low", "normal", "high"]),
-	kind: z.discriminatedUnion("type", [
-		z.object({ type: z.literal("text") }),
-		z.object({ type: z.literal("voice"), seconds: z.number() }),
-	]),
-	screening: z.object({ by: z.string().nullable() }).nullable(),
+	habTask: z.string().nullable(),
+	habMessage: z.string().nullable(),
 	assignees: z.array(z.string()),
 });
 
@@ -248,6 +263,7 @@ export function createStore(db: QueryDb): Store {
 					color: profile.color,
 					createdAt: new Date(profile.createdAt),
 					lastSeenAt: profile.lastSeenAt === null ? null : new Date(profile.lastSeenAt),
+					address: profile.address,
 				})
 				.onConflictDoNothing()
 				.returning<BotRow>();
@@ -261,6 +277,7 @@ export function createStore(db: QueryDb): Store {
 			if (patch.role !== undefined) values.role = patch.role;
 			if (patch.avatar !== undefined) values.avatar = patch.avatar;
 			if (patch.color !== undefined) values.color = patch.color;
+			if (patch.address !== undefined) values.address = patch.address;
 			if (patch.lastSeenAt !== undefined) values.lastSeenAt = new Date(patch.lastSeenAt);
 			if (Object.keys(values).length === 0) return this.bot(id);
 			const rows = await db.update(bots).set(values).where(eq(bots.id, id)).returning<BotRow>();
@@ -274,6 +291,46 @@ export function createStore(db: QueryDb): Store {
 			const rows = await db.delete(cards).where(eq(cards.id, id)).returning();
 			return rows.length > 0;
 		},
+		async connections() {
+			const rows = await db.select().from<ConnectionRow>(connections);
+			return rows.map(readConnection).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+		},
+		async connectionByToken(tokenHash) {
+			const rows = await db.select().from<ConnectionRow>(connections).where(eq(connections.tokenHash, tokenHash));
+			return rows[0] ? readConnection(rows[0]) : null;
+		},
+		async insertConnection(row) {
+			const rows = await db
+				.insert(connections)
+				.values({ id: row.id, name: row.name, tokenHash: row.tokenHash, members: [...row.members], createdAt: new Date(row.createdAt), lastUsedAt: null })
+				.returning<ConnectionRow>();
+			if (!rows[0]) throw new Error("connection insert returned no row");
+			return readConnection(rows[0]);
+		},
+		async updateConnection(id, patch) {
+			const values: Record<string, unknown> = {};
+			if (patch.name !== undefined) values.name = patch.name;
+			if (patch.members !== undefined) values.members = [...patch.members];
+			if (patch.lastUsedAt !== undefined) values.lastUsedAt = new Date(patch.lastUsedAt);
+			if (Object.keys(values).length === 0) return (await this.connections()).find((item) => item.id === id) ?? null;
+			const rows = await db.update(connections).set(values).where(eq(connections.id, id)).returning<ConnectionRow>();
+			return rows[0] ? readConnection(rows[0]) : null;
+		},
+		async deleteConnection(id) {
+			const rows = await db.delete(connections).where(eq(connections.id, id)).returning();
+			return rows.length > 0;
+		},
+	};
+}
+
+function readConnection(row: ConnectionRow): Connection {
+	const members = z.array(z.string()).safeParse(row.members);
+	return {
+		id: row.id,
+		name: row.name,
+		members: members.success ? members.data : [],
+		createdAt: new Date(row.createdAt).getTime() as Instant,
+		lastUsedAt: row.lastUsedAt ? (new Date(row.lastUsedAt).getTime() as Instant) : null,
 	};
 }
 
@@ -286,6 +343,7 @@ function readBot(row: BotRow): BotProfile {
 		color: row.color,
 		createdAt: new Date(row.createdAt).getTime() as Instant,
 		lastSeenAt: row.lastSeenAt ? (new Date(row.lastSeenAt).getTime() as Instant) : null,
+		address: row.address ?? null,
 	};
 }
 
@@ -319,8 +377,8 @@ function contentColumns(content: CardContent): Record<string, unknown> {
 		source: content.source,
 		originalLink: content.originalLink,
 		priority: content.priority,
-		kind: content.kind,
-		screening: content.screening,
+		habTask: content.habTask,
+		habMessage: content.habMessage,
 		assignees: [...content.assignees],
 	};
 }
@@ -348,8 +406,8 @@ function readContent(row: Row): CardContent {
 		source: row.source,
 		originalLink: row.originalLink,
 		priority: row.priority,
-		kind: row.kind,
-		screening: row.screening,
+		habTask: row.habTask ?? null,
+		habMessage: row.habMessage ?? null,
 		assignees: row.assignees ?? [],
 	});
 	return {

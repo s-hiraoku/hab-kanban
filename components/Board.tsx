@@ -49,7 +49,13 @@ export type Command =
 	| { type: "saveBot"; id: string | null; profile: Record<string, unknown> }
 	| { type: "deleteBot"; id: string }
 	| { type: "deleteCard"; cardId: string }
-	| { type: "setOwnerAvatar"; avatar: string | null };
+	| { type: "setOwnerAvatar"; avatar: string | null }
+	| { type: "createConnection"; name: string; members: string[] }
+	| { type: "updateConnection"; id: string; name: string; members: string[] }
+	| { type: "deleteConnection"; id: string };
+
+/** What a command can hand back besides the board: a new connection's token, shown once. */
+export type CommandOptions = { onToken?: (token: string) => void };
 
 type Order = Record<Column, string[]>;
 type DrawerTarget = { mode: "create" } | { mode: "edit"; cardId: string; dialog: boolean };
@@ -57,7 +63,7 @@ type DrawerTarget = { mode: "create" } | { mode: "edit"; cardId: string; dialog:
 const OWNER: MemberView = { id: "owner", name: "You", kind: "owner", avatar: null, color: "#f2b33d", initials: "You" };
 const MEMBER_DROP = "member:";
 const FOLDABLE: readonly Column[] = ["done", "wontDo"];
-const FOLD_KEY = "grokbot-kanban.folded";
+const FOLD_KEY = "hab-kanban.folded";
 
 /** Starts a drag only from the card body, never from its buttons, fields, or links. */
 function blocksDrag(target: EventTarget | null): boolean {
@@ -188,7 +194,7 @@ function useBoardSync(initial: BoardView, notify: (message: ToastMessage) => voi
 		};
 	}, [refresh]);
 
-	const send = useCallback(async (command: Command): Promise<boolean> => {
+	const send = useCallback(async (command: Command, options?: CommandOptions): Promise<boolean> => {
 		try {
 			const response = await fetch("/api/owner/commands", {
 				method: "POST",
@@ -199,8 +205,9 @@ function useBoardSync(initial: BoardView, notify: (message: ToastMessage) => voi
 				toLogin();
 				return false;
 			}
-			const payload = (await response.json().catch(() => ({}))) as { board?: BoardView; notice?: string | null };
+			const payload = (await response.json().catch(() => ({}))) as { board?: BoardView; notice?: string | null; token?: string };
 			if (payload.board) accept(payload.board);
+			if (payload.token) options?.onToken?.(payload.token);
 			else if (!response.ok) await refresh();
 			const message = commandToast(response.status, payload);
 			if (message) notify(message);
@@ -499,7 +506,7 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 								<ChevronLeftIcon className="size-5" />
 							</a>
 						) : null}
-						<h1 className="text-[15px] font-bold tracking-tight whitespace-nowrap">Grok Bot Kanban</h1>
+						<h1 className="text-[15px] font-bold tracking-tight whitespace-nowrap">HAB Kanban</h1>
 					</div>
 					<label className="relative order-3 flex basis-full items-center md:order-none md:max-w-[420px] md:flex-1 md:basis-auto">
 						<span className="sr-only">Search cards</span>
@@ -675,7 +682,16 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 						}}
 					/>
 				) : null}
-				<BotsPanel open={botsOpen} bots={board.bots} owner={owner} onClose={() => setBotsOpen(false)} send={send} notify={notify} />
+				<BotsPanel
+					open={botsOpen}
+					bots={board.bots}
+					connections={board.connections}
+					sharedToken={board.sharedToken}
+					owner={owner}
+					onClose={() => setBotsOpen(false)}
+					send={send}
+					notify={notify}
+				/>
 				<ConfirmDialog request={confirm} onDone={() => setConfirm(null)} />
 				<Toasts />
 			</div>

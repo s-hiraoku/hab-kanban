@@ -26,7 +26,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 		<main className="grid min-h-dvh place-items-center p-4">
 			<Card className="w-full max-w-[380px] gap-5 bg-deck">
 				<CardHeader>
-					<p className="text-xl font-bold tracking-tight">Grok Bot Kanban</p>
+					<p className="text-xl font-bold tracking-tight">HAB Kanban</p>
 					<CardTitle className="text-base font-normal text-muted-foreground">
 						<h1>Sign in to the board</h1>
 					</CardTitle>

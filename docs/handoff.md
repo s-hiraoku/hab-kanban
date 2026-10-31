@@ -1,4 +1,4 @@
-# 引き継ぎ（2026-10-29）
+# 引き継ぎ（2026-10-30）
 
 hab-kanban は、エージェント全体（Grok Bot、Dots、Hermes、Claude Code、Codex）の仕事を扱うカンバンです。HAB（hiraoku-agent-base）の Agent Hub のタスクは扱いません。HAB 側の位置づけは [hiraoku-agent-base#15](https://github.com/s-hiraoku/hiraoku-agent-base/issues/15) にあります。
 
@@ -7,12 +7,12 @@ hab-kanban は、エージェント全体（Grok Bot、Dots、Hermes、Claude Co
 - grokbot-kanban を移植済みです。カード、bot ロスター、メモ、Run、Cursor への引き渡し、MCP（15 ツール）、GitHub でのオーナーログインがあります。
 - スタックは Next.js 16.4、React 19.3、zod 4、TypeScript 6、Vitest 5、drizzle-orm、Tailwind 4 です。Node は 24 以上が必要です。
 - 動作環境は Cloudflare Workers です。OpenNext（`@opennextjs/cloudflare`）で動かし、DB は D1（binding `DB`、DB 名 `hab-kanban`、APAC）を使います。
-- 本番は https://hab-kanban.s-hiraoku.workers.dev です。`main` への push では自動デプロイされません。デプロイは `npm run deploy` で行います。
+- 本番は https://hab-kanban.s-hiraoku.workers.dev です。次のデプロイから https://hab-kanban.hiraoku.dev でも配信します。`main` への push では自動デプロイされません。デプロイは `npm run deploy` で行います。
 - 本番で確認済みのこと
   - オーナーの GitHub ログインとボードの表示
   - MCP：トークンなしは 401、`tools/list` は 15 件、`board_summary` が動く
-- secret は `BOT_TOKEN`、`OWNER_GITHUB_LOGIN`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET` の 4 つです。`wrangler secret put` で登録済みで、値はリポジトリにありません。
-- `npm run lint`（エラー 0）、`npm run typecheck`、`npm test`（55 件）、`next build`、OpenNext の build はすべて通ります。CI も成功しています。
+- secret は `OWNER_GITHUB_LOGIN`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET` の 3 つと、移行期間だけ残す `BOT_TOKEN` です。`wrangler secret put` で登録済みで、値はリポジトリにありません。エージェントのトークンは secret ではなく、ボードの Connections タブで発行します（D1 にはハッシュだけを保存します）。
+- `npm run lint`、`npm run typecheck`、`npm test`（61 件）、`npm run test:e2e`（32 件）、`next build`、OpenNext の build はすべて通ります。
 
 ## 構成で押さえること
 
@@ -21,7 +21,7 @@ hab-kanban は、エージェント全体（Grok Bot、Dots、Hermes、Claude Co
 - スキーマは `lib/schema.ts`（sqliteTable）と `migrations/*.sql` です。スキーマを変えるときは、新しい番号の SQL を `migrations/` に足してください。
   - ローカルへの適用は `npm run db:migrate:local`、本番への適用は `npm run db:migrate` です。
 - テストは `tests/sqlite.ts` で、`node:sqlite` のメモリ DB に同じ migrations を当てて走ります（`drizzle-orm/sqlite-proxy` 経由）。
-- MCP の入力スキーマは `lib/mcp.ts` の `jsonSchemaOf` が作ります（`z.toJSONSchema`）。zod の内部 API には戻さないでください。以前、それで入力スキーマが黙って空になりました。`tests/grok.test.ts` に回帰テストがあります。
+- MCP の入力スキーマは `lib/mcp.ts` の `jsonSchemaOf` が作ります（`z.toJSONSchema`）。zod の内部 API には戻さないでください。以前、それで入力スキーマが黙って空になりました。`tests/mcp.test.ts` に回帰テストがあります。
 - ローカル開発の手順は次のとおりです。
   1. `.dev.vars.example` を `.dev.vars` にコピーして値を入れる
   2. `npm run db:migrate:local`
@@ -30,41 +30,27 @@ hab-kanban は、エージェント全体（Grok Bot、Dots、Hermes、Claude Co
 
 ## 残作業
 
-### 1. Playwright e2e を Workers の上で動かす
+2026-10-30 に、前回の残作業 1〜3 と、HAB 向けの作り直しを終えました。
 
-`playwright.config.ts` は今も `next build && next start` を起動しています。この方法では D1 の binding がないため、e2e は動きません。
+- e2e は Workers の上（OpenNext の build と `wrangler dev`、毎回空のローカル D1）で動き、CI でも走ります（`e2e/serve.mjs`）。
+- lint の warning を解消し、React Compiler 系のルールを error に戻しました。
+- 画面名を HAB Kanban に変えました。Voice カードと「by Grok」のスクリーニングは削除しました（`migrations/0002_hab_refs.sql`）。
+- カードは HAB の Task と Relay メッセージを ID で指せます（`habTask`、`habMessage`）。表示するだけで、HAB の DB は読み書きしません。
+- ロスターの Bot は HAB アドレス（`lab@hermes.hab`）を持てます。エージェントは接続（HAB の参加グループに当たる）ごとのトークンで入り、その接続の Bot としてだけ動けます（`migrations/0003_hab_connections.sql`）。
+- 独自ドメインは hab-kanban.hiraoku.dev です（`wrangler.jsonc` の `routes`）。
 
-- `npm run preview`（`opennextjs-cloudflare build && preview`）か、`wrangler dev` で起動する形に変えてください。テスト用 D1 には migrations を当てる必要があります。
-- `e2e/fake-github.mjs` と `e2e/fake-cursor.mjs` は、`GITHUB_WEB_URL`、`GITHUB_API_URL`、`CURSOR_API_URL` で差し込みます。Worker にも渡るようにしてください（`.dev.vars` か `--var`）。
-- テストごとに DB を初期化する方法を決めてください。以前はメモリ DB でしたが、今は永続化されるローカル D1 です。
-- 動くようになったら、CI（`.github/workflows/ci.yml`）にも e2e を追加してください。
+### 1. 本番への反映（オーナーの作業）
 
-### 2. lint の warning を解消して、ルールを error に戻す
+1. hiraoku.dev が同じ Cloudflare アカウントのゾーンにあることを確かめる。
+2. GitHub OAuth アプリの callback URL を `https://hab-kanban.hiraoku.dev/api/auth/github/callback` に変える。
+3. `npm run db:migrate` を実行してから、`npm run deploy` を実行する。
+4. 移行の手順は README の「Moving off the shared token」に従う。各 Bot に HAB アドレスを付けて接続を発行し、エージェントの設定を新しいトークンに切り替える。全員が移ったら `npx wrangler secret delete BOT_TOKEN` を実行する。
 
-`eslint.config.mjs` で、React Compiler 系のルール 5 つ（`purity`、`refs`、`set-state-in-effect`、`immutability`、`preserve-manual-memoization`）を一時的に warn に下げています。
+### 2. まだ決まっていない論点
 
-主な箇所は次のとおりです。
-- `components/Board.tsx`：9 件。set-state-in-effect、refs、immutability、purity、preserve-manual-memoization です。ほかに exhaustive-deps が 1 件、no-location-assign-relative-destination が 2 件あります。
-- `components/BotsPanel.tsx`、`components/ConfirmDialog.tsx`：set-state-in-effect
-- `components/CreatedAt.tsx`、`app/page.tsx`、`app/login/page.tsx`：purity（描画中の `Date.now()` など）
-- その他の小さなもの
-  - `components/Avatar.tsx`：no-img-element
-  - 未使用変数：`lib/http.ts`、`lib/mcp.ts`、`tests/cursor.test.ts`、`tests/kit.ts`
-  - `eslint.config.mjs`：無名の default export
-
-直し終わったら、下げた 5 つのルールを error に戻してください。
-
-### 3. エージェントごとのトークン
-
-今は全エージェントが共有の `BOT_TOKEN` を使い、`bot` 引数で名乗ります。そのため、なりすましを防げません。エージェントごとにトークンを発行して照合し、`bot` をトークンから決める形にしてください。
-- 実装の候補は、D1 にトークンのハッシュを保存して、ロスターの bot と結び付ける方法です。
-- 既存の MCP クライアントが動き続けるように、移行の手順も用意してください。
-
-### 4. まだ決まっていない論点（実装の前に、オーナーに確認する）
-
-- 連携するエージェントの範囲：Grok Bot 以外の MCP クライアントの設定
-- カードの実行を HAB の Task や Relay と結び付けるか、結び付けるならどこを境界にするか。結び付ける場合でも、Relay か Task の契約を通してください。HAB の Hub の DB を直接読み書きしてはいけません。
-- カードに表示する最小限の項目と、UI の構成
+- Dots と Hermes の MCP クライアントで、ヘッダー付きの Streamable HTTP をそのまま使えるかは未確認です。Connections タブの「Hermes, Dots, others」の設定例が合わなければ、各クライアントの形式に合わせて足してください。
+- カードと HAB の Task・Relay を、表示より先まで結び付けるか（状態の同期、Relay からの起票など）。結び付けるなら HAB の Relay か Task の契約を通し、Hub の DB は直接触らないでください。
+- HAB 側の認証（Auth0、Relay の登録台帳）が本番に入ったら、このボード独自のトークンを HAB 発行のものに置き換えるか。
 
 ## 守ること
 

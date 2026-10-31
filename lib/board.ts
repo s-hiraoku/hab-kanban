@@ -1,5 +1,5 @@
-import { isBot, isOwner, type Bot, type Owner } from "./auth";
-import { botIdFor, cleanBotName, colorFor, type BotProfile, type BotProfilePatch } from "./bots";
+import { connectionToken, hashToken, isBot, isOwner, mintBot, type Bot, type BotScope, type Owner } from "./auth";
+import { HAB_ADDRESS, botIdFor, cleanBotName, colorFor, type BotProfile, type BotProfilePatch } from "./bots";
 import type { CursorClient, RunObservation } from "./cursor";
 import { DEFAULT_OWNER_AVATAR } from "./ownerAvatar";
 import {
@@ -31,13 +31,13 @@ import { toBoardView, toBotCard, toBotView, type BoardView, type BotCardView, ty
 
 export type NewCardInput = { externalId: string | null; content: CardContent };
 
-export type BotProfileInput = { name: string; role: string; avatar?: string | null; color: string | null };
+export type BotProfileInput = { name: string; role: string; avatar?: string | null; color: string | null; address?: string | null };
 
 export type OwnerCommand =
 	| { type: "create"; content: CardContent }
 	| { type: "edit"; cardId: CardId; patch: ContentPatch }
 	| { type: "move"; cardId: CardId; to: ParkColumn }
-	/** Ask a Grok Bot to run the card. Without a bot, the first bot assigned to the card. */
+	/** Ask a Bot to run the card. Without a bot, the first bot assigned to the card. */
 	| { type: "run"; cardId: CardId; bot: string | null }
 	/** Hand the card to a Cursor cloud agent, which works on the card's repository and opens a PR. */
 	| { type: "cursor"; cardId: CardId }
@@ -46,12 +46,19 @@ export type OwnerCommand =
 	| { type: "saveBot"; id: string | null; profile: BotProfileInput }
 	| { type: "deleteBot"; id: string }
 	| { type: "deleteCard"; cardId: CardId }
-	| { type: "setOwnerAvatar"; avatar: string | null };
+	| { type: "setOwnerAvatar"; avatar: string | null }
+	/** Issue a token for an agent. It may act as the listed Bots only. The token is shown once. */
+	| { type: "createConnection"; name: string; members: readonly string[] }
+	| { type: "updateConnection"; id: string; name: string; members: readonly string[] }
+	/** Revoke a connection: its token stops working at once. */
+	| { type: "deleteConnection"; id: string };
 
 export type CommandResult = {
 	board: BoardView;
 	notice: string | null;
 	error: null | "not_found" | "busy" | "bad_request";
+	/** A new connection's token. The board keeps only its hash, so this is the one time anyone sees it. */
+	token?: string;
 };
 
 /** Thrown when a request names something the board cannot accept, such as an unknown assignee. */
@@ -89,8 +96,10 @@ export type BoardSummary = {
 };
 
 /**
- * What a bot may do. `actor` is the calling bot's name as it appears in its Grok Bot profile.
- * A new name joins the roster on first use. A bot may move a card to any column.
+ * What a bot may do. `actor` names the calling Bot by its name, id, or HAB address. Over a connection's
+ * token it must be one of that connection's Bots, and may be left out when the connection has only one.
+ * Over the shared token any name goes, and a new name joins the roster on first use. A bot may move a
+ * card to any column.
  */
 export type BotBoard = {
 	create(input: NewCardInput, actor?: string | null): Promise<{ card: BotCardView; created: boolean }>;
@@ -102,16 +111,16 @@ export type BotBoard = {
 	addNote(ref: string, text: string, actor: string | null): Promise<BotCardView | null>;
 	move(ref: string, to: ParkColumn, reason: string | null, actor: string | null): Promise<BotCardView | null>;
 	/** The calling bot's run requests, or with `everyone` every Bot's, for a coordinating Bot to pass on. */
-	runRequests(actor: string, everyone?: boolean): Promise<BotCardView[]>;
+	runRequests(actor: string | null, everyone?: boolean): Promise<BotCardView[]>;
 	/** A coordinating Bot records that it passed a request on to the Bot it is for. */
-	passRun(ref: string, note: string | null, actor: string): Promise<BotCardView | null>;
-	startRun(ref: string, actor: string): Promise<BotCardView | null>;
-	finishRun(ref: string, outcome: RunOutcome, summary: string, actor: string): Promise<BotCardView | null>;
+	passRun(ref: string, note: string | null, actor: string | null): Promise<BotCardView | null>;
+	startRun(ref: string, actor: string | null): Promise<BotCardView | null>;
+	finishRun(ref: string, outcome: RunOutcome, summary: string, actor: string | null): Promise<BotCardView | null>;
 	/** Hands the card to a Cursor agent, ending the calling bot's own run on it if it had one. */
-	handOffToCursor(ref: string, instructions: string | null, actor: string): Promise<{ card: BotCardView; message: string } | null>;
+	handOffToCursor(ref: string, instructions: string | null, actor: string | null): Promise<{ card: BotCardView; message: string } | null>;
 	roster(): Promise<BotView[]>;
-	identify(actor: string): Promise<BotView>;
-	updateProfile(actor: string, patch: BotProfilePatch): Promise<BotView>;
+	identify(actor: string | null): Promise<BotView>;
+	updateProfile(actor: string | null, patch: BotProfilePatch): Promise<BotView>;
 	summary(actor: string | null): Promise<BoardSummary>;
 };
 
@@ -126,13 +135,17 @@ const OUTCOME: Record<RunOutcome, { column: Column; label: string }> = {
 export type BoardDeps = {
 	store: Store;
 	now: () => Instant;
-	/** null when CURSOR_API_KEY is not set; Run then offers Grok Bots only. */
+	/** null when CURSOR_API_KEY is not set; Run then offers Bots only. */
 	cursor?: CursorClient | null;
+	/** Whether the shared BOT_TOKEN still works, so the owner can see when every agent has moved off it. */
+	sharedToken?: boolean;
 };
 
 export type BoardHandle = {
 	owner(cap: Owner): OwnerBoard;
 	bot(cap: Bot): BotBoard;
+	/** The capability a connection's token grants, or null for a token the board did not issue or has revoked. */
+	connect(token: string): Promise<Bot | null>;
 };
 
 type Applied = { kind: "written"; card: Card } | { kind: "unchanged"; card: Card } | { kind: "missing" } | { kind: "conflict" };
@@ -153,16 +166,44 @@ export function openBoard(deps: BoardDeps): BoardHandle {
 		},
 		bot(cap) {
 			if (!isBot(cap)) throw new Error("unauthorized");
-			return botApi(deps);
+			return botApi(deps, cap.scope);
+		},
+		async connect(token) {
+			if (!token.startsWith("habk_")) return null;
+			const connection = await deps.store.connectionByToken(hashToken(token));
+			if (!connection) return null;
+			const at = deps.now();
+			// A busy agent calls every few seconds; a minute is fine-grained enough for "last used".
+			if (connection.lastUsedAt === null || at - connection.lastUsedAt > 60_000) await deps.store.updateConnection(connection.id, { lastUsedAt: at });
+			return mintBot({ kind: "connection", connectionId: connection.id, members: connection.members });
 		},
 	};
 }
 
-function botApi(deps: BoardDeps): BotBoard {
+function botApi(deps: BoardDeps, scope: BotScope): BotBoard {
 	const { store, now } = deps;
+	// Only the shared token may add Bots to the roster by naming them. A connection's Bots are set up by the owner.
+	const autoCreate = scope.kind === "shared";
+	const membersOf = async () => (await rosterOf(store)).filter((bot) => scope.kind === "connection" && scope.members.includes(bot.id));
 	const identify = async (actor: string | null | undefined): Promise<BotProfile | null> => {
-		if (!actor) return null;
-		return touchBot(store, actor, now());
+		if (scope.kind === "shared") return actor ? touchBot(store, actor, now()) : null;
+		const members = await membersOf();
+		let bot: BotProfile | null;
+		if (actor) {
+			bot = matchBot(members, actor);
+			if (!bot) throw new BoardInputError(`This connection cannot act as "${actor}". It can act as ${namesOf(members) || "no Bot yet"}.`);
+		} else if (members.length === 1) bot = members[0]!;
+		else return null;
+		return (await store.updateBot(bot.id, { lastSeenAt: now() })) ?? bot;
+	};
+	/** The calling Bot, for the tools that act as one. */
+	const caller = async (actor: string | null | undefined): Promise<BotProfile> => {
+		const bot = await identify(actor);
+		if (bot) return bot;
+		if (scope.kind === "shared") throw new BoardInputError('Pass "bot" with your Bot name.');
+		const members = await membersOf();
+		if (members.length === 0) throw new BoardInputError("This connection has no Bots yet. Ask the owner to add yours under Bots & MCP.");
+		throw new BoardInputError(`Pass "bot" with the Bot you act as: ${namesOf(members)}.`);
 	};
 	const updateCard = async (card: Card, patch: ContentPatch) => {
 		const written = await store.patchContent(card.id, patch);
@@ -172,7 +213,7 @@ function botApi(deps: BoardDeps): BotBoard {
 	return {
 		async create(input, actor) {
 			const bot = await identify(actor);
-			const assignees = await resolveMembers(store, input.content.assignees, { actor: bot, now: now(), autoCreate: true });
+			const assignees = await resolveMembers(store, input.content.assignees, { actor: bot, now: now(), autoCreate });
 			const ranks = (await store.all()).map((card) => card.rank);
 			const { card, created } = await store.insert({
 				externalId: input.externalId,
@@ -188,7 +229,7 @@ function botApi(deps: BoardDeps): BotBoard {
 			const card = await store.get(id);
 			if (!card) return null;
 			const next = { ...patch };
-			if (patch.assignees) next.assignees = await resolveMembers(store, patch.assignees, { actor: bot, now: now(), autoCreate: true });
+			if (patch.assignees) next.assignees = await resolveMembers(store, patch.assignees, { actor: bot, now: now(), autoCreate });
 			return updateCard(card, next);
 		},
 		async get(id) {
@@ -224,7 +265,7 @@ function botApi(deps: BoardDeps): BotBoard {
 			const bot = await identify(actor);
 			const card = await findCard(store, ref);
 			if (!card) return null;
-			const options = { actor: bot, now: now(), autoCreate: true };
+			const options = { actor: bot, now: now(), autoCreate };
 			let next: MemberId[];
 			if (change.set) next = await resolveMembers(store, change.set, options);
 			else {
@@ -262,12 +303,12 @@ function botApi(deps: BoardDeps): BotBoard {
 			return updateCard(fresh, { notes: notes.slice(-20_000) });
 		},
 		async runRequests(actor, everyone = false) {
-			const bot = await touchBot(store, actor, now());
+			const bot = await caller(actor);
 			const roster = await store.bots();
 			return (await store.all()).filter((card) => (everyone ? card.state.botRun : card.state.botRun?.bot === bot.id)).map((card) => toBotCard(card, roster));
 		},
 		async passRun(ref, note, actor) {
-			const bot = await touchBot(store, actor, now());
+			const bot = await caller(actor);
 			const card = await findCard(store, ref);
 			if (!card) return null;
 			const run = card.state.botRun;
@@ -285,7 +326,7 @@ function botApi(deps: BoardDeps): BotBoard {
 			return noted(store, applied.card, bot.name, at, `Passed the run on to ${target}${note?.trim() ? `: ${note.trim()}` : ""}`);
 		},
 		async startRun(ref, actor) {
-			const bot = await touchBot(store, actor, now());
+			const bot = await caller(actor);
 			const card = await findCard(store, ref);
 			if (!card) return null;
 			const run = card.state.botRun;
@@ -300,7 +341,7 @@ function botApi(deps: BoardDeps): BotBoard {
 			return noted(store, applied.card, bot.name, at, "Started the run");
 		},
 		async finishRun(ref, outcome, summary, actor) {
-			const bot = await touchBot(store, actor, now());
+			const bot = await caller(actor);
 			const card = await findCard(store, ref);
 			if (!card) return null;
 			if (card.state.botRun?.bot !== bot.id) {
@@ -314,7 +355,7 @@ function botApi(deps: BoardDeps): BotBoard {
 			return noted(store, applied.card, bot.name, now(), `Run ${label}: ${summary.trim()}`);
 		},
 		async handOffToCursor(ref, instructions, actor) {
-			const bot = await touchBot(store, actor, now());
+			const bot = await caller(actor);
 			const card = await findCard(store, ref);
 			if (!card) return null;
 			const result = await launchCursor(deps, card.id, { by: bot.id, byName: bot.name, instructions });
@@ -326,11 +367,11 @@ function botApi(deps: BoardDeps): BotBoard {
 			return (await rosterOf(store)).map((bot) => toBotView(bot, cards, now()));
 		},
 		async identify(actor) {
-			const bot = await touchBot(store, actor, now());
+			const bot = await caller(actor);
 			return toBotView(bot, await store.all(), now());
 		},
 		async updateProfile(actor, patch) {
-			const bot = await touchBot(store, actor, now());
+			const bot = await caller(actor);
 			const updated = await store.updateBot(bot.id, cleanProfilePatch(patch));
 			if (!updated) throw new BoardInputError("bot disappeared");
 			return toBotView(updated, await store.all(), now());
@@ -366,6 +407,7 @@ async function touchBot(store: Store, actor: string, at: Instant): Promise<BotPr
 		color: colorFor(name),
 		createdAt: at,
 		lastSeenAt: at,
+		address: null,
 	});
 }
 
@@ -375,15 +417,24 @@ async function rosterOf(store: Store): Promise<BotProfile[]> {
 }
 
 async function lookupBot(store: Store, ref: string): Promise<BotProfile | null> {
+	return matchBot(await rosterOf(store), ref);
+}
+
+/** A Bot named by its HAB address, id, or name. */
+function matchBot(roster: readonly BotProfile[], ref: string): BotProfile | null {
 	const needle = cleanBotName(ref).toLowerCase();
 	if (!needle) return null;
-	const roster = await rosterOf(store);
 	return (
+		roster.find((bot) => bot.address === needle) ??
 		roster.find((bot) => bot.id === needle) ??
 		roster.find((bot) => bot.name.toLowerCase() === needle) ??
 		roster.find((bot) => bot.id === botIdFor(needle)) ??
 		null
 	);
+}
+
+function namesOf(bots: readonly BotProfile[]): string {
+	return bots.map((bot) => bot.address ?? bot.name).join(", ");
 }
 
 async function resolveMembers(
@@ -430,6 +481,7 @@ function cleanProfilePatch(patch: BotProfilePatch): BotProfilePatch {
 	if (patch.role !== undefined) next.role = patch.role.slice(0, 200);
 	if (patch.avatar !== undefined) next.avatar = patch.avatar ? patch.avatar.trim() : null;
 	if (patch.color !== undefined) next.color = patch.color;
+	if (patch.address !== undefined) next.address = patch.address;
 	return next;
 }
 
@@ -451,7 +503,7 @@ async function executeChecked(deps: BoardDeps, command: OwnerCommand): Promise<C
 	if (command.type === "saveBot") return saveBot(deps, command.id, command.profile);
 	if (command.type === "setOwnerAvatar") {
 		// The owner's icon lives in a reserved bots row, so no migration is needed. It never joins the roster.
-		await deps.store.ensureBot({ id: OWNER_MEMBER, name: "You", role: "", avatar: null, color: "#f2b33d", createdAt: deps.now(), lastSeenAt: null });
+		await deps.store.ensureBot({ id: OWNER_MEMBER, name: "You", role: "", avatar: null, color: "#f2b33d", createdAt: deps.now(), lastSeenAt: null, address: null });
 		await deps.store.updateBot(OWNER_MEMBER, { avatar: command.avatar });
 		return { board: await viewOf(deps), notice: command.avatar ? "Your icon is saved" : "Your icon is back to the default", error: null };
 	}
@@ -469,7 +521,18 @@ async function executeChecked(deps: BoardDeps, command: OwnerCommand): Promise<C
 				await deps.store.patchContent(card.id, { assignees: card.content.assignees.filter((id) => id !== command.id) });
 			}
 		}
+		for (const connection of await deps.store.connections()) {
+			if (connection.members.includes(command.id)) {
+				await deps.store.updateConnection(connection.id, { members: connection.members.filter((id) => id !== command.id) });
+			}
+		}
 		return { board: await viewOf(deps), notice: "Bot removed", error: null };
+	}
+	if (command.type === "createConnection" || command.type === "updateConnection") return saveConnection(deps, command);
+	if (command.type === "deleteConnection") {
+		const removed = await deps.store.deleteConnection(command.id);
+		if (!removed) return { board: await viewOf(deps), notice: null, error: "not_found" };
+		return { board: await viewOf(deps), notice: "Connection revoked. Its token no longer works.", error: null };
 	}
 	if (command.type === "drop") return drop(deps, command);
 	if (command.type === "run") return requestRun(deps, command.cardId, command.bot);
@@ -509,11 +572,18 @@ async function saveBot(deps: BoardDeps, id: string | null, profile: BotProfileIn
 	if (!name) throw new BoardInputError("Give the bot a name.");
 	const clash = await lookupBot(deps.store, name);
 	if (clash && clash.id !== id) throw new BoardInputError(`A bot named ${clash.name} already exists.`);
+	const address = profile.address?.trim() || null;
+	if (address) {
+		if (!HAB_ADDRESS.test(address)) throw new BoardInputError("A HAB address looks like lab@hermes.hab: lowercase letters, digits, and hyphens.");
+		const holder = (await rosterOf(deps.store)).find((bot) => bot.address === address);
+		if (holder && holder.id !== id) throw new BoardInputError(`${holder.name} already has ${address}.`);
+	}
 	const patch = cleanProfilePatch({
 		name,
 		role: profile.role,
 		...(profile.avatar === undefined ? {} : { avatar: profile.avatar || null }),
 		color: profile.color ?? colorFor(name),
+		...(profile.address === undefined ? {} : { address }),
 	});
 	if (id) {
 		const updated = await deps.store.updateBot(id, patch);
@@ -528,8 +598,35 @@ async function saveBot(deps: BoardDeps, id: string | null, profile: BotProfileIn
 		color: patch.color ?? colorFor(name),
 		createdAt: deps.now(),
 		lastSeenAt: null,
+		address: patch.address ?? null,
 	});
 	return { board: await viewOf(deps), notice: "Bot added", error: null };
+}
+
+/** Issues a connection's token, or changes its name and Bots. A Bot belongs to one connection at most, as in HAB. */
+async function saveConnection(
+	deps: BoardDeps,
+	command: Extract<OwnerCommand, { type: "createConnection" } | { type: "updateConnection" }>,
+): Promise<CommandResult> {
+	const name = command.name.replace(/\s+/g, " ").trim().slice(0, 60);
+	if (!name) throw new BoardInputError("Give the connection a name, such as the agent it is for.");
+	const roster = await rosterOf(deps.store);
+	const members = [...new Set(command.members)];
+	for (const id of members) if (!roster.some((bot) => bot.id === id)) throw new BoardInputError("That bot is not on the roster.");
+	const selfId = command.type === "updateConnection" ? command.id : null;
+	for (const other of await deps.store.connections()) {
+		if (other.id === selfId) continue;
+		const taken = members.find((id) => other.members.includes(id));
+		if (taken) throw new BoardInputError(`${roster.find((bot) => bot.id === taken)?.name ?? taken} already belongs to ${other.name}.`);
+	}
+	if (command.type === "updateConnection") {
+		const updated = await deps.store.updateConnection(command.id, { name, members });
+		if (!updated) return { board: await viewOf(deps), notice: null, error: "not_found" };
+		return { board: await viewOf(deps), notice: "Connection saved", error: null };
+	}
+	const token = connectionToken();
+	await deps.store.insertConnection({ id: crypto.randomUUID(), name, members, tokenHash: hashToken(token), createdAt: deps.now(), lastUsedAt: null });
+	return { board: await viewOf(deps), notice: "Connection created. Copy its token now: it is not shown again.", error: null, token };
 }
 
 /** A card dropped on a column at a position. Same column only reorders. */
@@ -549,7 +646,7 @@ async function requestRun(deps: BoardDeps, cardId: CardId, botId: string | null)
 	if (!card) return { board: await viewOf(deps), notice: null, error: "not_found" };
 	const roster = await rosterOf(deps.store);
 	const bot = botId ? roster.find((item) => item.id === botId) : runnerOf(card.content.assignees, roster);
-	if (!bot) throw new BoardInputError(botId ? "That bot is not on the roster." : "Assign a Grok Bot to this card first, then run it.");
+	if (!bot) throw new BoardInputError(botId ? "That bot is not on the roster." : "Assign a Bot to this card first, then run it.");
 	if (card.state.cursorRun) throw new BoardInputError("A Cursor agent is on this card. Cancel it first.");
 	const current = card.state.botRun;
 	if (!current && !RUNNABLE.includes(card.state.column)) throw new BoardInputError("Run works on cards in Inbox, Todo, or In Progress. Move the card back to Todo to run it again.");
@@ -768,7 +865,11 @@ async function changeState(deps: BoardDeps, cardId: CardId, change: (state: Card
 }
 
 async function viewOf(deps: BoardDeps): Promise<BoardView> {
-	return toBoardView(await deps.store.all(), await deps.store.bots(), deps.now(), { cursorEnabled: Boolean(deps.cursor) });
+	return toBoardView(await deps.store.all(), await deps.store.bots(), deps.now(), {
+		cursorEnabled: Boolean(deps.cursor),
+		connections: await deps.store.connections(),
+		sharedToken: deps.sharedToken ?? false,
+	});
 }
 
 function labelOf(column: Column): string {

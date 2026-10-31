@@ -22,7 +22,6 @@ export type Column = (typeof COLUMNS)[number]["id"];
 export type ParkColumn = Column;
 
 export type Priority = "low" | "normal" | "high";
-export type CardKind = { type: "text" } | { type: "voice"; seconds: number };
 export type RepoRef = { url: HttpsUrl; startingRef: string };
 
 export type CardContent = {
@@ -33,8 +32,10 @@ export type CardContent = {
 	source: string | null;
 	originalLink: HttpsUrl | null;
 	priority: Priority;
-	kind: CardKind;
-	screening: { by: string | null } | null;
+	/** A HAB Task this card tracks, by its id. Shown on the card; the board never reads or changes the Task. */
+	habTask: string | null;
+	/** A HAB Relay message this card came from or answers, by its id. Shown only, like habTask. */
+	habMessage: string | null;
 	assignees: readonly MemberId[];
 };
 
@@ -59,7 +60,7 @@ export type PastRun = {
 };
 
 /**
- * A Run the owner asked a Grok Bot to do. The board cannot wake a Bot, so the Bot finds requests on its
+ * A Run the owner asked a Bot to do. The board cannot wake a Bot, so the Bot finds requests on its
  * own schedule (a routine that calls list_run_requests), marks the run working, and reports back.
  */
 /**
@@ -114,7 +115,7 @@ export const CREATE_TIMEOUT_MS = 15_000;
 export const CHECK_TIMEOUT_MS = 8_000;
 
 /**
- * Where a card sits, and the run it is waiting on, if any: a Grok Bot's or a Cursor agent's, never both.
+ * Where a card sits, and the run it is waiting on, if any: a Bot's or a Cursor agent's, never both.
  * The stored shape is still the idle state earlier versions wrote; they ignore the extra run fields.
  */
 export type CardState = { kind: "idle"; column: Column; last: PastRun | null; botRun: BotRun | null; cursorRun: CursorRun | null };
