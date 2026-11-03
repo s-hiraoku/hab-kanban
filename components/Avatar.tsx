@@ -46,7 +46,7 @@ export function AvatarStack({ members, size = 20, max = 4 }: { members: readonly
 	return (
 		<span className="inline-flex items-center">
 			{shown.map((member, index) => (
-				<MemberAvatar key={member.id} member={member} size={size} ring className={index > 0 ? "-ml-[7px]" : undefined} />
+				<MemberAvatar key={member.id} member={member} size={size} ring className={index > 0 ? "-ml-[5px]" : undefined} />
 			))}
 			{extra > 0 ? <span className="ml-1 text-[11px] text-muted-foreground">+{extra}</span> : null}
 		</span>
