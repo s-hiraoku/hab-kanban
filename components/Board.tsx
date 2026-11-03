@@ -577,18 +577,28 @@ export default function Board({ initial, studioUrl }: { initial: BoardView; stud
 					</div>
 					<div className="ml-auto flex flex-none items-center gap-1 md:ml-0 md:grid md:border-t md:pt-2">
 						<DockButton active={memberFilter === "none"} onClick={() => setMemberFilter((current) => (current === "none" ? null : "none"))} title="Open cards with no assignee" load={unassigned} label="Unassigned">
-							<span className="size-10 rounded-full border-2 border-dashed border-faint" />
+							<span className="size-8 rounded-full border-2 border-dashed border-faint" />
 						</DockButton>
-						<Button variant="outline" size="sm" className="text-xs md:h-auto md:w-full md:px-1 md:py-1.5 md:whitespace-normal" onClick={() => setBotsOpen(true)}>
-							<SettingsIcon className="md:hidden" />
-							Bots & MCP
-						</Button>
-						<form method="post" action="/api/auth/logout" className="m-0">
-							<Button type="submit" variant="ghost" size="sm" className="text-xs text-muted-foreground md:w-full">
-								<LogOutIcon className="md:hidden" />
-								Sign out
-							</Button>
-						</form>
+						<div className="flex items-center gap-1 md:mt-1 md:justify-center">
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button variant="ghost" size="icon" aria-label="Bots & MCP" className="text-muted-foreground hover:text-foreground" onClick={() => setBotsOpen(true)}>
+										<SettingsIcon />
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent side="right">Bots & MCP</TooltipContent>
+							</Tooltip>
+							<form method="post" action="/api/auth/logout" className="m-0">
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button type="submit" variant="ghost" size="icon" aria-label="Sign out" className="text-muted-foreground hover:text-foreground">
+											<LogOutIcon />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent side="right">Sign out</TooltipContent>
+								</Tooltip>
+							</form>
+						</div>
 					</div>
 				</nav>
 
@@ -801,17 +811,19 @@ function ColumnShell({
 			data-column={id}
 			aria-label={label}
 			className={cn(
-				"flex min-h-0 flex-col rounded-b-md border border-t-[3px] border-t-(--lamp) bg-deck-2 transition-colors [--surface:var(--deck-2)]",
+				"flex min-h-0 flex-col rounded-lg border border-line/60 bg-deck-2 transition-colors [--surface:var(--deck-2)]",
 				"max-h-[calc(100dvh-220px)] flex-[0_0_calc(100vw-48px)] snap-start md:max-h-none md:max-w-[360px] md:min-w-[232px] md:flex-[1_1_232px]",
 				folded && "max-w-[52px] min-w-[52px] flex-[0_0_52px] md:max-w-[52px] md:min-w-[52px] md:flex-[0_0_52px]",
 				canDrop && "border-line",
-				canDrop && isOver && "border-primary border-t-(--lamp) bg-drop",
+				canDrop && isOver && "border-primary bg-drop",
 			)}
 		>
-			<header className={cn("flex h-10 flex-none items-center gap-2 pr-1.5 pl-3 select-none", folded && "h-auto flex-col gap-2.5 px-0 py-3")}>
+			<header className={cn("flex h-11 flex-none items-center gap-2 pr-1.5 pl-3.5 select-none", folded && "h-auto flex-col gap-2.5 px-0 py-3")}>
 				{onFold && folded ? <FoldButton label={label} folded onClick={onFold} /> : null}
+				{/* The column's lamp: the same color marks it in the status menus and the drawer. */}
+				<span aria-hidden="true" className="size-2 flex-none rounded-full bg-(--lamp) shadow-[0_0_0_3px_color-mix(in_srgb,var(--lamp)_18%,transparent)]" />
 				<h2 className={cn("text-[13px] font-bold whitespace-nowrap", folded && "text-sm [writing-mode:vertical-rl]")}>{label}</h2>
-				<span className="text-xs font-medium text-muted-foreground tabular-nums">{count}</span>
+				<span className="grid h-5 min-w-5 place-items-center rounded-full bg-background px-1.5 text-[11px] font-semibold text-muted-foreground tabular-nums">{count}</span>
 				{onAdd || (onFold && !folded) ? (
 					<span className="ml-auto flex items-center">
 						{onAdd ? (

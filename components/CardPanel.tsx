@@ -49,10 +49,10 @@ const CardPanel = forwardRef<HTMLElement, Props>(function CardPanel(
 			data-card-id={card.id}
 			data-priority={card.priority}
 			className={cn(
-				"group/card relative cursor-pointer touch-manipulation rounded-md border border-line/70 bg-card py-2.5 pr-2.5 pl-4 transition-colors outline-none select-none [--surface:var(--card)] [-webkit-touch-callout:none]",
+				"group/card relative cursor-pointer touch-manipulation rounded-lg border border-line/60 bg-card py-2.5 pr-2.5 pl-4 shadow-[0_1px_2px_color-mix(in_srgb,var(--shadow)_60%,transparent)] transition-[border-color,box-shadow] outline-none select-none [--surface:var(--card)] [-webkit-touch-callout:none]",
 				"before:absolute before:inset-y-2.5 before:left-[6px] before:w-[3px] before:rounded-full before:bg-(--stripe)",
 				!lead && "before:w-0 before:border-l-2 before:border-dashed before:border-line before:bg-transparent",
-				"hover:border-card-hover-line focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/40",
+				"hover:border-card-hover-line hover:shadow-[0_2px_6px_var(--shadow)] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/40",
 				card.run?.status === "working" && "border-teal-line",
 				dragging && "border-dashed opacity-30",
 				overlay && "cursor-grabbing border-primary shadow-[0_18px_40px_var(--shadow)] transition-[transform,opacity] duration-150",
@@ -92,7 +92,7 @@ const CardPanel = forwardRef<HTMLElement, Props>(function CardPanel(
 				{card.habTask ? <Tag className={faded} title={`HAB Task ${card.habTask}`}>Task {shortRef(card.habTask)}</Tag> : null}
 				{card.habMessage ? <Tag className={faded} title={`HAB Relay message ${card.habMessage}`}>Relay {shortRef(card.habMessage)}</Tag> : null}
 			</div>
-			<footer className={cn("mt-3 flex min-h-6 items-center gap-2 border-t border-line/50 pt-2.5", faded)}>
+			<footer className={cn("mt-2.5 flex min-h-6 items-center gap-2", faded)}>
 				<span className="mr-auto inline-flex min-w-0 items-center gap-1.5 overflow-hidden text-xs text-muted-foreground" title={card.createdBy ? `Filed by ${card.createdBy.name}` : "Filed over the API"}>
 					{card.createdBy ? <MemberAvatar member={card.createdBy} size={18} /> : <UnknownAvatar size={18} />}
 					<CreatedAt iso={card.createdAt} age={card.age} />
@@ -107,7 +107,7 @@ const CardPanel = forwardRef<HTMLElement, Props>(function CardPanel(
 						<AvatarStack members={card.assignees} size={22} max={3} />
 					</span>
 				) : (
-					<span className="truncate text-xs text-muted-foreground">Unassigned</span>
+					<span className="truncate text-xs text-faint">Unassigned</span>
 				)}
 			</footer>
 		</article>
